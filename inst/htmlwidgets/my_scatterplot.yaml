@@ -1,0 +1,7 @@
+# # inst/htmlwidgets/my_scatterplot.yaml
+# name: my_scatterplot
+
+# # Static dependencies (loaded once per page)
+# static:
+#   script:
+#     - https://d3js.org/d3.v7.min.js  # D3.js v7 (matches the JS code)

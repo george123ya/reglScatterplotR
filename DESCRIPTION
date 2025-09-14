@@ -1,0 +1,14 @@
+Package: reglScatterplot
+Type: Package
+Title: A Regl-Scatterplot Wrapper
+Version: 0.1.0
+Authors@R: person("George", "Muñoz", email = "gmunoz@rockefeller.edu", role = c("aut", "cre"))
+Description: An R package to create interactive scatterplots using the regl-scatterplot JavaScript library.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    htmlwidgets,
+    viridisLite,
+    RColorBrewer
