@@ -18,6 +18,8 @@
 #' @param backgroundColor optional hex color for canvas background (default white).
 #' @param width fixed width of the canvas in pixels (default is resizable).
 #' @param height fixed height of the canvas in pixels (default is resizable).
+#' @param legend_title optional title for the legend (default "Value" for continuous, none for categorical).
+#' @param enableDownload logical; show download button for exporting plot (default FALSE).
 #' @param elementId specify id for the containing div.
 #'
 #' @import htmlwidgets
@@ -30,26 +32,26 @@
 #'
 #' @examples
 #' data(quakes)
-#'
-#' # Continuous color scale
 #' my_scatterplot(quakes$long, quakes$lat, colorBy = quakes$depth, 
-#'                continuous_palette = "inferno", showAxes = TRUE, showTooltip = TRUE)
+#'                continuous_palette = "inferno", showAxes = TRUE, showTooltip = TRUE,
+#'                legend_title = "Depth (km)", enableDownload = TRUE)
 #' 
 #' # No axes, uniform color, custom opacity
 #' my_scatterplot(quakes$long, quakes$lat, pointColor = "#0072B2", 
-#'                showAxes = FALSE, opacity = 0.6, width = 800, height = 600)
-#' 
-#' # Add a categorical variable for demonstration
-#' quakes$magType <- ifelse(quakes$mag > 5, "high", "low")
+#'                showAxes = FALSE, opacity = 0.6, width = 800, height = 600,
+#'                enableDownload = TRUE)
 #' 
 #' # Pass a data.frame with categorical data and a custom palette
+#' quakes$magType <- ifelse(quakes$mag > 5, "high", "low")
 #' my_scatterplot(
 #'   x = "long",
 #'   y = "lat",
 #'   colorBy = "magType",
 #'   data = quakes,
 #'   categorical_palette = "Set2",
-#'   backgroundColor = "#F0F8FF"
+#'   backgroundColor = "#F0F8FF",
+#'   legend_title = "Magnitude Type",
+#'   enableDownload = TRUE
 #' )
 #' 
 #' @export
@@ -57,7 +59,8 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
                            categorical_palette = "Set1", continuous_palette = "viridis", 
                            xlab = "X", ylab = "Y", showAxes = TRUE, showTooltip = TRUE, 
                            pointColor = NULL, opacity = 0.8, backgroundColor = NULL, 
-                           width = NULL, height = NULL, elementId = NULL) {
+                           width = NULL, height = NULL, legend_title = NULL, 
+                           enableDownload = FALSE, elementId = NULL) {
   
   if (!is.null(data)) {
     x <- data[, x]
@@ -115,6 +118,7 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
       legend_data$names <- levels
       legend_data$colors <- hex_colors
       legend_data$var_type <- var_type
+      legend_data$title <- legend_title  # Pass title for categorical (optional)
       
     } else if (is.numeric(colorBy)) {
       var_type <- "continuous"
@@ -142,6 +146,7 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
       legend_data$midVal <- mean(colorBy, na.rm = TRUE)
       legend_data$var_type <- var_type
       legend_data$colors <- palette_hex6
+      legend_data$title <- legend_title %||% "Value"  # Default to "Value" if NULL
       
     } else {
       stop("colorBy must be numeric, character, or factor")
@@ -162,7 +167,8 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
     ylab = ylab,
     showAxes = showAxes,
     showTooltip = showTooltip,
-    backgroundColor = backgroundColor
+    backgroundColor = backgroundColor,
+    enableDownload = enableDownload
   )
 
   htmlwidgets::createWidget(
@@ -175,19 +181,8 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
   )
 }
 
-#' Shiny bindings for my_scatterplot
-#'
-#' These functions allow the `my_scatterplot` widget to be used inside Shiny apps.
-#'
-#' @param outputId Output variable to read from (character).
-#' @param width A valid CSS unit for the plot width (e.g., "400px", "100%").
-#' @param height A valid CSS unit for the plot height.
-#' @param expr An expression that generates a `my_scatterplot` widget.
-#' @param env The environment in which to evaluate `expr`.
-#' @param quoted Is `expr` a quoted expression (with `quote()`)? 
-#'        Default is `FALSE`. Useful when creating wrapper functions.
-#'
-#' @name my_scatterplot-shiny
+# Shiny bindings
+#' @rdname my_scatterplot-shiny
 #' @export
 my_scatterplotOutput <- function(outputId, width = '400px', height = '400px'){
   htmlwidgets::shinyWidgetOutput(outputId, 'my_scatterplot', width, height, package = 'reglScatterplot')
@@ -199,3 +194,22 @@ renderMy_scatterplot <- function(expr, env = parent.frame(), quoted = FALSE) {
   if (!quoted) { expr <- substitute(expr) }
   htmlwidgets::shinyRenderWidget(expr, my_scatterplotOutput, env, quoted = TRUE)
 }
+
+#' Shiny bindings for \code{my_scatterplot}
+#'
+#' Output and render functions for using \code{my_scatterplot} within Shiny
+#' applications and shiny::render* functions.
+#'
+#' @param outputId \code{character}. The output slot that will be used to
+#'   access the object.
+#' @param width,height \code{character}. The width and height of the container
+#'   (e.g. \code{'400px'}, \code{'100\%'}). See
+#'   \code{\link[htmlwidgets]{shinyWidgetOutput}} for more details.
+#' @param expr An expression that generates a \code{my_scatterplot}.
+#' @param env The environment in which to evaluate \code{expr}.
+#' @param quoted Is \code{expr} a quoted expression (with \code{\link[base]{quote}})?
+#'   This is useful if you want to save an expression in a variable.
+#'
+#' @name my_scatterplot-shiny
+#' @seealso \code{\link{my_scatterplot}}
+NULL
