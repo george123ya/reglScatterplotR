@@ -1,66 +1,43 @@
-#' Scalable scatterplot HTML widget
+#' Scalable scatterplot HTML widget with multi-sync support
 #'
 #' Create an interactive scalable scatterplot using the `regl-scatterplot` JavaScript library.
 #'
-#' @param x numeric vector of x coordinates, or a column name for x in \code{data}.
-#' @param y numeric vector of y coordinates, or a column name for y in \code{data}.
-#' @param colorBy factor/chr/numeric vector to color by, or a column name for colorBy in \code{data}.
-#' @param data optional data.frame containing the data to plot.
-#' @param size point size.
-#' @param categorical_palette string name for a categorical RColorBrewer palette (e.g., "Set1", "Set2").
-#' @param continuous_palette string name for a continuous viridisLite palette (e.g., "viridis", "inferno").
-#' @param xlab x-axis label.
-#' @param ylab y-axis label.
-#' @param showAxes logical; show axes and labels (default TRUE).
-#' @param showTooltip logical; enable hover tooltips (default TRUE).
-#' @param pointColor optional uniform hex color for points (e.g., "#FF0000"); overrides colorBy.
-#' @param opacity numeric; point opacity (0-1, default 0.8).
-#' @param backgroundColor optional hex color for canvas background (default white).
-#' @param width fixed width of the canvas in pixels (default is resizable).
-#' @param height fixed height of the canvas in pixels (default is resizable).
-#' @param legend_title optional title for the legend (default "Value" for continuous, none for categorical).
-#' @param enableDownload logical; show download button for exporting plot (default FALSE).
-#' @param elementId specify id for the containing div.
-#'
-#' @import htmlwidgets
-#' @importFrom RColorBrewer brewer.pal
-#' @importFrom grDevices col2rgb colorRampPalette rgb
-#' @importFrom viridisLite viridis
-#' @importFrom viridisLite magma
-#' @importFrom viridisLite plasma
-#' @importFrom viridisLite inferno
-#'
-#' @examples
-#' data(quakes)
-#' my_scatterplot(quakes$long, quakes$lat, colorBy = quakes$depth, 
-#'                continuous_palette = "inferno", showAxes = TRUE, showTooltip = TRUE,
-#'                legend_title = "Depth (km)", enableDownload = TRUE)
-#' 
-#' # No axes, uniform color, custom opacity
-#' my_scatterplot(quakes$long, quakes$lat, pointColor = "#0072B2", 
-#'                showAxes = FALSE, opacity = 0.6, width = 800, height = 600,
-#'                enableDownload = TRUE)
-#' 
-#' # Pass a data.frame with categorical data and a custom palette
-#' quakes$magType <- ifelse(quakes$mag > 5, "high", "low")
-#' my_scatterplot(
-#'   x = "long",
-#'   y = "lat",
-#'   colorBy = "magType",
-#'   data = quakes,
-#'   categorical_palette = "Set2",
-#'   backgroundColor = "#F0F8FF",
-#'   legend_title = "Magnitude Type",
-#'   enableDownload = TRUE
-#' )
-#' 
+#' @param x numeric vector of x coordinates
+#' @param y numeric vector of y coordinates
+#' @param colorBy factor/chr/numeric vector to color by
+#' @param data optional data.frame containing the data
+#' @param size point size (default 3)
+#' @param categorical_palette RColorBrewer palette name (default "Set1")
+#' @param continuous_palette viridisLite palette name (default "viridis")
+#' @param custom_palette named character vector of hex colors, e.g. c("Significant" = "#E74C3C", "Not Significant" = "#CCCCCC")
+#' @param xlab x-axis label
+#' @param ylab y-axis label
+#' @param showAxes logical; show axes (default TRUE)
+#' @param showTooltip logical; enable tooltips (default TRUE)
+#' @param pointColor uniform hex color (overrides colorBy)
+#' @param opacity point opacity 0-1 (default 0.8)
+#' @param backgroundColor hex color for background
+#' @param width canvas width in pixels
+#' @param height canvas height in pixels
+#' @param legend_title legend title
+#' @param enableDownload logical; show download button (default FALSE)
+#' @param plotId unique plot ID (for multi-sync)
+#' @param syncPlots vector of plot IDs to sync
+#' @param elementId container element ID
+#' @param gene_names optional vector of gene names for tooltips
+#' @param dataVersion Optional unique identifier to force full redraw (advanced)
 #' @export
 my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3, 
                            categorical_palette = "Set1", continuous_palette = "viridis", 
-                           xlab = "X", ylab = "Y", showAxes = TRUE, showTooltip = TRUE, 
+                           custom_palette = NULL, gene_names = NULL,
+                           xlab = "X", ylab = "Y", 
+                           xrange = NULL, yrange = NULL,
+                           showAxes = TRUE, showTooltip = TRUE, 
                            pointColor = NULL, opacity = 0.8, backgroundColor = NULL, 
                            width = NULL, height = NULL, legend_title = NULL, 
-                           enableDownload = FALSE, elementId = NULL) {
+                           enableDownload = FALSE, plotId = NULL, syncPlots = NULL,
+                           elementId = NULL,
+                           dataVersion = NULL) {   # ← ADD THIS PARAM
   
   if (!is.null(data)) {
     x <- data[, x]
@@ -74,15 +51,30 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
     stop("x and y coordinates must be numeric")
   }
 
-  # Compute original domains for axes
-  x_min <- min(x, na.rm = TRUE)
-  x_max <- max(x, na.rm = TRUE)
-  y_min <- min(y, na.rm = TRUE)
-  y_max <- max(y, na.rm = TRUE)
+  # ✅ COMPUTE ORIGINAL DOMAINS - use xrange/yrange if provided
+  if (!is.null(xrange)) {
+    x_min <- xrange[1]
+    x_max <- xrange[2]
+  } else {
+    x_min <- min(x, na.rm = TRUE)
+    x_max <- max(x, na.rm = TRUE)
+  }
+  
+  if (!is.null(yrange)) {
+    y_min <- yrange[1]
+    y_max <- yrange[2]
+  } else {
+    y_min <- min(y, na.rm = TRUE)
+    y_max <- max(y, na.rm = TRUE)
+  }
 
-  # Normalize coordinates to the [-1, 1] range required by regl-scatterplot.
+  # ✅ NORMALIZE COORDINATES TO [-1, 1] using the SPECIFIED ranges
   x_normalized <- -1 + 2 * (x - x_min) / (x_max - x_min)
   y_normalized <- -1 + 2 * (y - y_min) / (y_max - y_min)
+  
+  # ✅ CLAMP normalized values to [-1, 1] (in case capping wasn't perfect)
+  x_normalized <- pmax(-1, pmin(1, x_normalized))
+  y_normalized <- pmax(-1, pmin(1, y_normalized))
   
   points <- data.frame(x = x_normalized, y = y_normalized)
 
@@ -101,13 +93,59 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
       var_type <- "categorical"
       levels <- levels(as.factor(colorBy))
       
-      plot_colors <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
-      if (length(levels) > 11) {
-        plot_colors <- colorRampPalette(plot_colors)(length(levels))
+      cat("[my_scatterplot] Processing categorical colorBy\n")
+      cat("[my_scatterplot] Levels:", paste(levels, collapse = ", "), "\n")
+      
+      # Use custom_palette if provided
+      if (!is.null(custom_palette)) {
+        cat("[my_scatterplot] custom_palette provided\n")
+        cat("[my_scatterplot] custom_palette names:", paste(names(custom_palette), collapse = ", "), "\n")
+        cat("[my_scatterplot] custom_palette values:", paste(custom_palette, collapse = ", "), "\n")
+        
+        if (!is.null(names(custom_palette))) {
+          # Build plot_colors by matching levels to named palette
+          plot_colors <- character(length(levels))
+          
+          for (i in seq_along(levels)) {
+            level_name <- levels[i]
+            if (level_name %in% names(custom_palette)) {
+              plot_colors[i] <- custom_palette[[level_name]]
+              cat("[my_scatterplot] Mapped", level_name, "to", plot_colors[i], "\n")
+            } else {
+              warning(paste("Level", level_name, "not found in custom_palette"))
+              plot_colors[i] <- custom_palette[1]
+            }
+          }
+        } else {
+          warning("custom_palette must be a named vector")
+          plot_colors <- as.character(custom_palette[1:length(levels)])
+        }
+      } else {
+        # Use RColorBrewer
+        cat("[my_scatterplot] Using RColorBrewer palette:", categorical_palette, "\n")
+        plot_colors <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
+        if (length(levels) > 11) {
+          plot_colors <- colorRampPalette(plot_colors)(length(levels))
+        }
       }
       
-      # Convert colors to 6-digit hex format for JavaScript.
-      hex_colors <- apply(col2rgb(plot_colors), 2, function(col) rgb(col[1], col[2], col[3], maxColorValue = 255))
+      cat("[my_scatterplot] Final plot_colors:", paste(plot_colors, collapse = ", "), "\n")
+      
+      # Convert to proper hex format
+      hex_colors <- character(length(plot_colors))
+      for (i in seq_along(plot_colors)) {
+        col <- plot_colors[i]
+        # Check if already hex
+        if (grepl("^#", col)) {
+          hex_colors[i] <- col
+        } else {
+          # Convert RGB/named color to hex
+          rgb_vals <- col2rgb(col)
+          hex_colors[i] <- rgb(rgb_vals[1], rgb_vals[2], rgb_vals[3], maxColorValue = 255)
+        }
+      }
+      
+      cat("[my_scatterplot] Final hex_colors:", paste(hex_colors, collapse = ", "), "\n")
       
       colorBy_numeric <- as.integer(as.factor(colorBy)) - 1L
       points <- cbind(points, valueA = colorBy_numeric)
@@ -118,7 +156,7 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
       legend_data$names <- levels
       legend_data$colors <- hex_colors
       legend_data$var_type <- var_type
-      legend_data$title <- legend_title  # Pass title for categorical (optional)
+      legend_data$title <- legend_title
       
     } else if (is.numeric(colorBy)) {
       var_type <- "continuous"
@@ -126,7 +164,6 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
       colorBy_normalized <- (colorBy - min(colorBy, na.rm = TRUE)) / (max(colorBy, na.rm = TRUE) - min(colorBy, na.rm = TRUE))
       points <- cbind(points, valueA = colorBy_normalized)
       
-      # Get the viridisLite function based on the palette string.
       palette_func <- switch(continuous_palette,
                              viridis = viridisLite::viridis,
                              magma = viridisLite::magma,
@@ -134,8 +171,6 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
                              inferno = viridisLite::inferno,
                              viridisLite::viridis)
       palette_colors <- palette_func(256)
-      
-      # Remove the alpha channel if present.
       palette_hex6 <- substr(palette_colors, 1, 7)
       
       options$colorBy <- "valueA"
@@ -146,7 +181,7 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
       legend_data$midVal <- mean(colorBy, na.rm = TRUE)
       legend_data$var_type <- var_type
       legend_data$colors <- palette_hex6
-      legend_data$title <- legend_title %||% "Value"  # Default to "Value" if NULL
+      legend_data$title <- legend_title %||% "Value"
       
     } else {
       stop("colorBy must be numeric, character, or factor")
@@ -155,11 +190,18 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
     options$pointColor <- "#0072B2"
   }
 
+  # ✅ FIX: Ensure gene_names is properly formatted
+  gene_names_list <- NULL
+  if (!is.null(gene_names)) {
+    # Convert to character vector and ensure it's serializable
+    gene_names_list <- as.character(gene_names)
+  }
+
   widget_spec <- list(
     points = as.matrix(points),
     options = options,
     legend = legend_data,
-    x_min = x_min,
+    x_min = x_min,      
     x_max = x_max,
     y_min = y_min,
     y_max = y_max,
@@ -168,10 +210,18 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
     showAxes = showAxes,
     showTooltip = showTooltip,
     backgroundColor = backgroundColor,
-    enableDownload = enableDownload
+    enableDownload = enableDownload,
+    gene_names = gene_names_list,
+    plotId = plotId,
+    syncPlots = syncPlots,
+    dataVersion = dataVersion   # ← ADD THIS LINE
   )
 
-  htmlwidgets::createWidget(
+  if (is.null(elementId) && !is.null(plotId)) {
+    elementId <- plotId
+  }
+  
+  widget <- htmlwidgets::createWidget(
     name = 'my_scatterplot',
     widget_spec,
     width = width,
@@ -179,37 +229,25 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
     package = 'reglScatterplot',
     elementId = elementId
   )
+  
+  widget
 }
 
 # Shiny bindings
-#' @rdname my_scatterplot-shiny
 #' @export
 my_scatterplotOutput <- function(outputId, width = '400px', height = '400px'){
   htmlwidgets::shinyWidgetOutput(outputId, 'my_scatterplot', width, height, package = 'reglScatterplot')
 }
 
-#' @rdname my_scatterplot-shiny
 #' @export
 renderMy_scatterplot <- function(expr, env = parent.frame(), quoted = FALSE) {
   if (!quoted) { expr <- substitute(expr) }
   htmlwidgets::shinyRenderWidget(expr, my_scatterplotOutput, env, quoted = TRUE)
 }
 
-#' Shiny bindings for \code{my_scatterplot}
-#'
-#' Output and render functions for using \code{my_scatterplot} within Shiny
-#' applications and shiny::render* functions.
-#'
-#' @param outputId \code{character}. The output slot that will be used to
-#'   access the object.
-#' @param width,height \code{character}. The width and height of the container
-#'   (e.g. \code{'400px'}, \code{'100\%'}). See
-#'   \code{\link[htmlwidgets]{shinyWidgetOutput}} for more details.
-#' @param expr An expression that generates a \code{my_scatterplot}.
-#' @param env The environment in which to evaluate \code{expr}.
-#' @param quoted Is \code{expr} a quoted expression (with \code{\link[base]{quote}})?
-#'   This is useful if you want to save an expression in a variable.
-#'
-#' @name my_scatterplot-shiny
-#' @seealso \code{\link{my_scatterplot}}
+#' @export
+enableMyScatterplotSync <- function(plotIds, session = shiny::getDefaultReactiveDomain()) {
+  session$sendCustomMessage("my_scatterplot_enableSync", list(plotIds = plotIds))
+}
+
 NULL

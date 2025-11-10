@@ -2,7 +2,7 @@
 % Please edit documentation in R/my_scatterplot.R
 \name{my_scatterplot}
 \alias{my_scatterplot}
-\title{Scalable scatterplot HTML widget}
+\title{Scalable scatterplot HTML widget with multi-sync support}
 \usage{
 my_scatterplot(
   x,
@@ -21,6 +21,10 @@ my_scatterplot(
   backgroundColor = NULL,
   width = NULL,
   height = NULL,
+  legend_title = NULL,
+  enableDownload = FALSE,
+  plotId = NULL,
+  syncPlots = NULL,
   elementId = NULL
 )
 }
@@ -57,33 +61,31 @@ my_scatterplot(
 
 \item{height}{fixed height of the canvas in pixels (default is resizable).}
 
+\item{legend_title}{optional title for the legend (default "Value" for continuous, none for categorical).}
+
+\item{enableDownload}{logical; show download button for exporting plot (default FALSE).}
+
+\item{plotId}{unique identifier for this plot. Required for multi-sync functionality.}
+
+\item{syncPlots}{vector of plot IDs to synchronize with (e.g., c("plot1", "plot2", "plot3")).}
+
 \item{elementId}{specify id for the containing div.}
 }
 \description{
 Create an interactive scalable scatterplot using the \code{regl-scatterplot} JavaScript library.
+Multiple plots can be synchronized for real-time camera pan/zoom and selection sync.
 }
 \examples{
 data(quakes)
-
-# Continuous color scale
 my_scatterplot(quakes$long, quakes$lat, colorBy = quakes$depth, 
-               continuous_palette = "inferno", showAxes = TRUE, showTooltip = TRUE)
+               continuous_palette = "inferno", showAxes = TRUE, showTooltip = TRUE,
+               legend_title = "Depth (km)", enableDownload = TRUE,
+               plotId = "plot1")
 
-# No axes, uniform color, custom opacity
-my_scatterplot(quakes$long, quakes$lat, pointColor = "#0072B2", 
-               showAxes = FALSE, opacity = 0.6, width = 800, height = 600)
-
-# Add a categorical variable for demonstration
-quakes$magType <- ifelse(quakes$mag > 5, "high", "low")
-
-# Pass a data.frame with categorical data and a custom palette
-my_scatterplot(
-  x = "long",
-  y = "lat",
-  colorBy = "magType",
-  data = quakes,
-  categorical_palette = "Set2",
-  backgroundColor = "#F0F8FF"
-)
+# Multi-sync example: Two plots that pan/zoom together
+my_scatterplot(quakes$long, quakes$lat, colorBy = quakes$mag,
+               plotId = "plot1", syncPlots = c("plot1", "plot2"))
+my_scatterplot(quakes$lat, quakes$depth, colorBy = quakes$stations,
+               plotId = "plot2", syncPlots = c("plot1", "plot2"))
 
 }
