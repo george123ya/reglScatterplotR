@@ -1,1457 +1,1073 @@
 // ============================================================================
-// MULTI-SYNC REGISTRY (Global - shared across all plot instances)
+// MULTI-SYNC REGISTRY (Merged: First Code Features + Second Code Sync Logic)
 // ============================================================================
 if (!window.__myScatterplotRegistry) {
   window.__myScatterplotRegistry = new Map();
-  console.log('✓ Global registry initialized');
+  window.__myScatterplotRegistry.globalSyncEnabled = false;
+  window.__myScatterplotRegistry.globalSyncPlotIds = [];
+  
+  window.__myScatterplotRegistry.isSyncing = false;       
+  window.__myScatterplotRegistry.syncLeader = null;       
+  window.__myScatterplotRegistry.leaderTimeout = null;
+  
+  window.__myScatterplotRegistry.activeStrainers = {}; 
+  window.__myScatterplotRegistry.activeCategories = null; 
+  
+  console.log('[SP-DEBUG] Global registry initialized');
 }
 
-let globalSyncEnabled = false;
-let globalSyncPlotIds = [];
-let isSyncing = false;
+if (!window.__spUnsubscribers) { window.__spUnsubscribers = {}; }
+
 const globalRegistry = window.__myScatterplotRegistry;
 
-// ============================================================================
-// SYNC FUNCTIONS
-// ============================================================================
+const cloneCamera = (cam) => {
+    if (!cam) return null;
+    if (cam instanceof Float32Array) return new Float32Array(cam);
+    if (Array.isArray(cam)) return [...cam];
+    return JSON.parse(JSON.stringify(cam));
+};
 
-function syncCameraAcrossPlots(sourcePlotId) {
-  const sourceEntry = globalRegistry.get(sourcePlotId);
-  if (!sourceEntry || !sourceEntry.plot) return;
-
-  isSyncing = true;
-  const sourceCamera = sourceEntry.plot.get('cameraView');
-  const syncGroup = sourceEntry.syncGroup || new Set(globalRegistry.keys());
-
-  syncGroup.forEach(plotId => {
-    if (plotId !== sourcePlotId) {
-      const entry = globalRegistry.get(plotId);
-      if (entry && entry.plot && !entry.plot._destroyed) {
-        try {
-          entry.plot.set({ cameraView: sourceCamera }, { preventEvent: true });
-          if (entry.updateAxesFromCamera) {
-            entry.updateAxesFromCamera();
-          }
-        } catch (e) {}
-      }
+const decodeBase64 = (base64Str) => {
+    if (!base64Str) return null;
+    if (typeof base64Str === 'string' && base64Str.startsWith('base64:')) {
+        const raw = atob(base64Str.slice(7));
+        const len = raw.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) { bytes[i] = raw.charCodeAt(i); }
+        return new Float32Array(bytes.buffer);
     }
-  });
+    return new Float32Array(base64Str);
+};
 
-  isSyncing = false;
-}
+function recalcAndApplyFilters(entry) {
+    if (!entry || !entry.plot || !entry.filterData) return;
 
-if (typeof Shiny !== 'undefined') {
-  // Highlight table rows
-  Shiny.addCustomMessageHandler('highlight_table_rows', function(msg) {
-    console.log('Highlighting table rows:', msg.rows);
+    const n = entry.n_points;
+    const strainers = globalRegistry.activeStrainers;
+    const categories = globalRegistry.activeCategories; 
+    const strainerKeys = Object.keys(strainers);
     
-    // First, remove all existing highlights
-    document.querySelectorAll('tr.dt-highlighted').forEach(row => {
-      row.classList.remove('dt-highlighted');
-    });
-    
-    // Then add highlight to specified rows
-    if (msg.rows && msg.rows.length > 0) {
-      const table = document.querySelector('table.dataTable tbody');
-      if (table) {
-        msg.rows.forEach(rowNum => {
-          const row = table.rows[rowNum - 1]; // rowNum is 1-indexed
-          if (row) {
-            row.classList.add('dt-highlighted');
-            console.log('Highlighted row', rowNum);
-          }
-        });
-      }
+    if (strainerKeys.length === 0 && categories === null) {
+        entry.plot.unfilter();
+        if (window.Shiny && (entry.plotId === 'p1' || entry.plotId === globalRegistry.globalSyncPlotIds[0])) {
+            window.Shiny.setInputValue("filtered_count", n);
+        }
+        return;
     }
-  });
-  
-  // Clear table highlights
-  Shiny.addCustomMessageHandler('clear_table_highlight', function(msg) {
-    console.log('Clearing table highlights');
-    document.querySelectorAll('tr.dt-highlighted').forEach(row => {
-      row.classList.remove('dt-highlighted');
-    });
-  });
-}
 
-// Handler to highlight plot points when table rows are selected
-Shiny.addCustomMessageHandler('highlight_plot_points', function(msg) {
-    if (!msg.indices || !Array.isArray(msg.indices)) return;
-    
-    console.log('📋 → 📊 Table selection sent to plot:', msg.indices);
-    
-    // Find all registered plots and apply selection to the first one
-    globalRegistry.forEach((entry, plotId) => {
-        if (entry.plot && !entry.plot._destroyed) {
-            try {
-                entry.plot.select(new Set(msg.indices), { preventEvent: true });
-                console.log(`✓ Applied selection to plot ${plotId}`);
-            } catch (e) {
-                console.warn(`Failed to select on plot ${plotId}:`, e);
+    const indices = [];
+    const filterBuffers = entry.filterData; 
+    const catBuffer = entry.categoryData || entry.zData;
+
+    for (let i = 0; i < n; i++) {
+        let pass = true;
+        for (let k = 0; k < strainerKeys.length; k++) {
+            const varName = strainerKeys[k];
+            const range = strainers[varName];
+            if (filterBuffers[varName]) {
+                const val = filterBuffers[varName][i];
+                if (val < range[0] || val > range[1]) {
+                    pass = false;
+                    break;
+                }
             }
         }
-    });
-});
+        if (!pass) continue; 
 
-// Handler to scroll table to row (optional enhancement)
-Shiny.addCustomMessageHandler('scroll_to_row', function(msg) {
-    var table = $('#' + msg.tableId).DataTable();
-    if (table) {
-        var page = Math.floor(msg.rowIndex / table.page.len());
-        table.page(page).draw(false);
-        console.log(`📍 Scrolled table to row ${msg.rowIndex}`);
+        if (categories !== null && catBuffer) {
+            const cat = Math.floor(catBuffer[i]);
+            if (!categories.has(cat)) {
+                pass = false;
+            }
+        }
+
+        if (pass) indices.push(i);
     }
-});
+    
+    entry.plot.filter(indices);
+    
+    if (window.Shiny && (entry.plotId === 'p1' || entry.plotId === globalRegistry.globalSyncPlotIds[0])) {
+         window.Shiny.setInputValue("filtered_count", indices.length);
+    }
+}
 
-// Handler to update selected count
-Shiny.addCustomMessageHandler('update_count', function(msg) {
-    document.getElementById('selected_count').textContent = msg.count;
-});
+function syncCameraAcrossPlots(sourcePlotId) {
+  if (!globalRegistry.globalSyncEnabled) return;
+  const sourceEntry = globalRegistry.get(sourcePlotId);
+  if (sourceEntry && sourceEntry.plot && !sourceEntry.plot._destroyed) {
+      const sourceCamera = cloneCamera(sourceEntry.plot.get('cameraView'));
+      
+      // Use the global list to ensure we hit everyone
+      globalRegistry.forEach((entry, targetId) => {
+        if (targetId !== sourcePlotId && entry.plot && !entry.plot._destroyed && entry.canvas.isConnected) {
+            // [FIX] Check initialization flag to prevent race conditions
+            if (!entry.isInitializing) {
+                try {
+                  entry.plot.set({ cameraView: sourceCamera }, { preventEvent: true });
+                  if (entry.updateAxesFromCamera && !entry.axisThrottle) {
+                      entry.axisThrottle = requestAnimationFrame(() => {
+                          entry.updateAxesFromCamera();
+                          entry.axisThrottle = null;
+                      });
+                  }
+                } catch (e) {}
+            }
+        }
+      });
+  }
+}
 
 if (typeof Shiny !== 'undefined') {
+
+  // [NEW] Fast Point Size Update Handler
+  Shiny.addCustomMessageHandler('update_point_size', function(msg) {
+      const entry = globalRegistry.get(msg.plotId);
+      if (entry && entry.plot) {
+          if (!entry.options) entry.options = {};
+          entry.options.size = msg.size;
+          entry.plot.set({ pointSize: msg.size });
+      }
+  });
+
+  Shiny.addCustomMessageHandler('update_plot_color', function(msg) {
+      const entry = globalRegistry.get(msg.plotId);
+      if (!entry || !entry.plot) return;
+
+      if (msg.z) {
+          entry.zData = decodeBase64(msg.z);
+      }
+      
+      if (msg.group_data) {
+          entry.categoryData = decodeBase64(msg.group_data);
+      }
+
+      if (msg.legend) {
+          const isSolid = (msg.legend.var_type === 'none' || !msg.legend.var_type);
+          
+          entry.legend = msg.legend;
+          
+          if (isSolid) {
+              entry.options.pointColor = '#0072B2';
+              entry.options.colorBy = null;
+              entry.plot.set({ pointColor: '#0072B2', colorBy: null });
+              if (entry.createLegend) {
+                  entry.createLegend(entry.canvas.parentElement, { var_type: null });
+              }
+          } else {
+              entry.options.pointColor = msg.legend.colors;
+              entry.options.colorBy = 'valueA';
+              entry.plot.set({ pointColor: msg.legend.colors, colorBy: 'valueA' });
+              if (entry.createLegend) {
+                  entry.createLegend(entry.canvas.parentElement, msg.legend);
+              }
+          }
+          if (entry.updateLegendUI) entry.updateLegendUI();
+      }
+
+      const n = entry.n_points;
+      if (entry.xData && entry.yData && entry.zData) {
+         const points = new Array(n);
+         for(let i=0; i<n; i++) {
+             points[i] = [entry.xData[i], entry.yData[i], entry.zData[i]];
+         }
+         entry.plot.draw(points);
+      }
+      recalcAndApplyFilters(entry);
+  });
+
+  Shiny.addCustomMessageHandler('update_plot_strainers', function(msg) {
+      const entry = globalRegistry.get(msg.plotId);
+      if (!entry) return;
+      if (!entry.filterData) entry.filterData = {};
+      entry.filterData[msg.col] = decodeBase64(msg.data);
+      recalcAndApplyFilters(entry);
+  });
+  
+  Shiny.addCustomMessageHandler('my_scatterplot_sync', function(msg) {
+    globalRegistry.globalSyncEnabled = msg.enabled;
+    
+    if (msg.enabled) {
+        const activeIds = Array.from(globalRegistry.keys()).filter(id => {
+            const e = globalRegistry.get(id);
+            return e && e.plot && !e.plot._destroyed && e.canvas.isConnected;
+        });
+        globalRegistry.globalSyncPlotIds = activeIds;
+        const syncGroup = new Set(activeIds);
+        activeIds.forEach(pid => {
+            const entry = globalRegistry.get(pid);
+            if (entry) entry.syncGroup = syncGroup;
+        });
+    } else {
+        // Clear groups if disabled
+        globalRegistry.forEach(entry => entry.syncGroup = null);
+        globalRegistry.globalSyncPlotIds = [];
+    }
+  });
+
+  Shiny.addCustomMessageHandler('update_filter_range', function(msg) {
+      if (msg.range === null) {
+          delete globalRegistry.activeStrainers[msg.variable];
+      } else {
+          globalRegistry.activeStrainers[msg.variable] = msg.range;
+      }
+      globalRegistry.forEach(entry => {
+          if (entry.plot && !entry.plot._destroyed) {
+              recalcAndApplyFilters(entry);
+          }
+      });
+  });
+
   Shiny.addCustomMessageHandler('select_plot_points', function(msg) {
-    console.log('📋 select_plot_points received:', msg);
-    
-    if (!msg || msg.indices === undefined || msg.indices === null) {
-      console.error('❌ No indices');
-      return;
-    }
-    
-    let indices = msg.indices;
-    
-    // Handle empty array
-    if (Array.isArray(indices) && indices.length === 0) {
-      console.log('Empty selection');
-      return;
-    }
-    
-    // ✅ FIX: Ensure it's an array, NOT a Set
-    if (!Array.isArray(indices)) {
-      console.log('Converting to array:', indices);
-      indices = [indices];
-    }
-    
-    console.log('✅ Selecting indices (as array):', indices);
-    
-    // Apply to all plots
-    globalRegistry.forEach((entry, plotId) => {
-      if (entry?.plot && !entry.plot._destroyed) {
-        try {
-          // ✅ FIX: Pass array directly, not Set
+    if (!msg || !msg.indices) return;
+    const indices = Array.isArray(msg.indices) ? msg.indices : [msg.indices];
+    globalRegistry.forEach((entry) => {
+      if (entry.plot && entry.canvas.isConnected) {
           entry.plot.select(indices, { preventEvent: true });
-          console.log(`✓ Selected on ${plotId}:`, indices);
-        } catch (e) {
-          console.error(`❌ Error on ${plotId}:`, e.message);
-        }
       }
     });
   });
   
   Shiny.addCustomMessageHandler('clear_plot_selection', function(msg) {
-    console.log('🗑️  Clearing selection');
-    globalRegistry.forEach((entry, plotId) => {
-      if (entry?.plot && !entry.plot._destroyed) {
-        try {
+    globalRegistry.forEach((entry) => {
+      if (entry.plot && entry.canvas.isConnected) {
           entry.plot.deselect({ preventEvent: true });
-          console.log(`✓ Deselected on ${plotId}`);
-        } catch (e) {
-          console.error(`❌ Error:`, e.message);
-        }
       }
     });
   });
 }
 
-// 🔗 Shiny handler to enable/disable sync
-Shiny.addCustomMessageHandler('my_scatterplot_sync', function(msg) {
-    console.log('🔗 Sync message received, enabled:', msg.enabled);
-
-    if (msg.enabled) {
-        globalSyncEnabled = true;
-        const checkAndSync = () => {
-            const plotIds = (msg.plotIds && Array.isArray(msg.plotIds) && msg.plotIds.length > 0) 
-                ? msg.plotIds 
-                : Array.from(globalRegistry.keys());
-            
-            console.log('📡 Syncing plots:', plotIds);
-            
-            if (plotIds.length === 0) {
-                setTimeout(checkAndSync, 100);
-                return;
-            }
-
-            globalSyncPlotIds = plotIds;
-            const syncGroup = new Set(plotIds);
-            
-            plotIds.forEach(pid => {
-                const entry = globalRegistry.get(pid);
-                if (entry) {
-                    entry.syncGroup = syncGroup;
-                }
-            });
-
-            if (plotIds.length > 0) {
-                const mainEntry = globalRegistry.get(plotIds[0]);
-                if (mainEntry && mainEntry.plot) {
-                    const mainCamera = mainEntry.plot.get('cameraView');
-                    
-                    plotIds.slice(1).forEach(pid => {
-                        const entry = globalRegistry.get(pid);
-                        if (entry && entry.plot) {
-                            entry.plot.set({ cameraView: mainCamera }, { preventEvent: true });
-                            if (entry.updateAxesFromCamera) {
-                                entry.updateAxesFromCamera();
-                            }
-                        }
-                    });
-                }
-            }
-        };
-
-        checkAndSync();
-    } else {
-        globalSyncEnabled = false;
-        globalSyncPlotIds = [];
-        globalRegistry.forEach((entry) => {
-            entry.syncGroup = null;
-        });
-    }
-});
-
-// ============================================================================
-// MAIN WIDGET
-// ============================================================================
 HTMLWidgets.widget({
     name: 'my_scatterplot',
     type: 'output',
     factory: function(el, width, height) {
         const container = el;
         container.style.position = 'relative';
-        container.style.overflow = 'hidden';
+        container.style.overflow = 'hidden'; 
+        container.style.backgroundColor = 'white';
 
-        let margin = { top: 20, right: 20, bottom: 50, left: 60 };
+        const injectStyles = () => {
+            const styleId = 'my-scatterplot-styles';
+            if (document.getElementById(styleId)) return;
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+                .sp-download-btn { position: absolute; top: 10px; left: 10px; z-index: 100; background: white; border: 1px solid #ccc; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-family: sans-serif; font-size: 13px; color: #333; box-shadow: 0 2px 4px rgba(0,0,0,0.1); user-select: none; transition: background 0.2s; }
+                .sp-download-btn:hover { background: #f8f9fa; }
+                .sp-menu { display: none; position: absolute; top: 100%; left: 0; margin-top: 5px; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 140px; z-index: 101; }
+                .sp-menu-item { padding: 8px 12px; cursor: pointer; font-size: 13px; font-family: sans-serif; color: #333; }
+                .sp-menu-item:hover { background: #f0f7ff; color: #000; }
+                .sp-legend { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+                .sp-legend-item { transition: opacity 0.2s; user-select: none; }
+                .sp-legend-item:hover { background-color: #f5f5f5; border-radius: 4px; }
+                .sp-color-swatch { width: 14px; height: 14px; border-radius: 3px; margin-right: 8px; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.2); box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+                .sp-color-swatch:hover { border-color: #000; }
+                .sp-loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; position: absolute; top: 50%; left: 50%; margin-top: -15px; margin-left: -15px; z-index: 50; display: none; }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            `;
+            document.head.appendChild(style);
+            const pickrStyle = document.createElement('link');
+            pickrStyle.rel = 'stylesheet';
+            pickrStyle.href = 'https://esm.sh/@simonwep/pickr/dist/themes/nano.min.css';
+            document.head.appendChild(pickrStyle);
+        };
+        injectStyles();
+
+        let loader = document.createElement('div');
+        loader.className = 'sp-loader';
+        container.appendChild(loader);
+
+        let margin = { top: 20, right: 20, bottom: 60, left: 60 };
         let plotId = null;
-        const VECTOR_POINT_LIMIT = 50000;
-
         let canvas = document.createElement('canvas');
-        canvas.style.position = 'absolute';
-        canvas.style.top = '0';
-        canvas.style.left = '0';
-        canvas.width = width;
-        canvas.height = height;
+        canvas.style.position = 'absolute'; 
+        canvas.style.top = margin.top + 'px'; 
+        canvas.style.left = margin.left + 'px';
         container.appendChild(canvas);
 
-        let plot;
-        let renderer;
-        let xAxisG, yAxisG, xAxis, yAxis;
-        let xScale, yScale;
-        let xDomainOrig, yDomainOrig;
-        let svg;
-        let tooltip;
+        let plot, renderer, svg, xAxisG, yAxisG, xAxis, yAxis, xScale, yScale;
+        let xDomainOrig, yDomainOrig, tooltip;
         let d3Available = false;
-        let currentXData;
-        let currentPoints;
-        let prevDomains = null;
+        let dataBuffers = { x: null, y: null, z: null };
+        
         let prevNumPoints = 0;
         let legendDiv = null;
         let isInitialRender = true;
-        let currentNormDomains = { x: [-1, 1], y: [-1, 1] };
+        let resizeObserver = null;
+        let activeCategories = null; 
+        let lastClickedCategoryIndex = -1;
+        let totalCategories = 0;
+        let filterBuffers = {}; 
 
-        const createLegend = function(container, legendData) {
+        const VECTOR_POINT_LIMIT = 200000;
+
+        const updateAxes = function() {
+            if (!d3Available || !xScale || !yScale || !svg || !xAxis || !yAxis) return;
+            if (!xAxisG || !yAxisG) return;
+            xAxis.scale(xScale); yAxis.scale(yScale);
+            xAxisG.call(xAxis); yAxisG.call(yAxis);
+            svg.selectAll('.domain').attr('stroke', '#333');
+            svg.selectAll('.tick line').attr('stroke', '#ccc');
+            svg.selectAll('.tick text').attr('fill', '#333').style('font-size', '11px');
+        };
+
+        const updateLegendUI = function() {
+            if (!legendDiv) return;
+            const items = legendDiv.querySelectorAll('.sp-legend-item');
+            const cats = globalRegistry.activeCategories;
+            items.forEach((item, idx) => {
+                if (cats === null || cats.has(idx)) {
+                    item.style.opacity = '1';
+                } else {
+                    item.style.opacity = '0.3';
+                }
+            });
+        };
+
+        const createLegend = async function(container, legendData) {
             if (!legendDiv) {
                 legendDiv = document.createElement('div');
-                legendDiv.className = 'scatterplot-legend';
-                legendDiv.style.cssText = `
-                    position: absolute;
-                    top: 10px;
-                    right: 10px;
-                    background: rgba(255, 255, 255, 0.8);
-                    padding: 10px;
-                    border-radius: 5px;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-                    max-height: 80%;
-                    overflow-y: auto;
-                    font-family: sans-serif;
-                    font-size: 12px;
-                    z-index: 10;
-                `;
+                legendDiv.className = 'sp-legend';
+                legendDiv.style.cssText = `position: absolute; top: 10px; right: 10px; background: rgba(255, 255, 255, 0.85); padding: 12px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-height: 80%; overflow-y: auto; font-size: 12px; z-index: 10; border: 1px solid #eee;`;
                 container.appendChild(legendDiv);
             } else {
                 legendDiv.innerHTML = '';
             }
 
+            if (!legendData || !legendData.var_type || legendData.var_type === 'none') {
+                legendDiv.style.display = 'none';
+                return; 
+            }
+            legendDiv.style.display = 'block';
+
             if (legendData.title) {
-                const legendTitle = document.createElement('div');
-                legendTitle.innerText = legendData.title;
-                legendTitle.style.cssText = `
-                    margin-bottom: 10px;
-                    font-weight: bold;
-                    font-size: 14px;
-                    text-align: center;
-                `;
-                legendDiv.appendChild(legendTitle);
+                const t = document.createElement('div');
+                t.innerText = legendData.title; t.style.cssText = `margin-bottom: 8px; font-weight: 600; font-size: 13px; text-align: center; color: #222;`;
+                legendDiv.appendChild(t);
             }
 
             if (legendData.var_type === 'categorical') {
+                totalCategories = legendData.names.length;
+                let Pickr = window.Pickr;
+                if (!Pickr) {
+                    const mod = await import('https://esm.sh/@simonwep/pickr');
+                    Pickr = mod.default;
+                    window.Pickr = Pickr;
+                }
+
                 legendData.names.forEach((name, i) => {
-                    const item = document.createElement('div');
-                    item.style.marginBottom = '5px';
-                    item.innerHTML = `
-                        <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${legendData.colors[i]}; vertical-align: middle;"></span>
-                        <span style="margin-left: 5px; vertical-align: middle;">${name}</span>
-                    `;
-                    legendDiv.appendChild(item);
+                    const row = document.createElement('div');
+                    row.className = 'sp-legend-item';
+                    row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; padding: 2px 4px; position: relative; cursor: pointer;';
+                    
+                    if (globalRegistry.activeCategories !== null && !globalRegistry.activeCategories.has(i)) {
+                        row.style.opacity = '0.3';
+                    }
+                    
+                    const swatch = document.createElement('div');
+                    swatch.className = 'sp-color-swatch';
+                    swatch.style.backgroundColor = legendData.colors[i];
+                    row.appendChild(swatch);
+
+                    const pickrInst = Pickr.create({
+                        el: swatch, theme: 'nano', default: legendData.colors[i], defaultRepresentation: 'HEX', useAsButton: true,
+                        components: { preview: true, opacity: false, hue: true, interaction: { hex: true, rgba: false, input: true, save: true } }
+                    });
+
+                    pickrInst.on('save', (color, instance) => {
+                        const newHex = color.toHEXA().toString().substring(0, 7);
+                        legendData.colors[i] = newHex; 
+                        swatch.style.backgroundColor = newHex; 
+                        plot.set({ pointColor: [...legendData.colors] }); 
+                        
+                        if(window.Shiny && window.Shiny.setInputValue && plotId) {
+                            window.Shiny.setInputValue(plotId + '_legend_colors', legendData.colors);
+                        }
+                        
+                        pickrInst.hide();
+                    });
+
+                    swatch.addEventListener('click', (e) => e.stopPropagation());
+
+                    const label = document.createElement('span');
+                    label.style.color = '#444';
+                    label.innerText = name;
+                    
+                    row.onclick = (e) => {
+                          if (e.target.closest('.pcr-app')) return;
+                          
+                          if (e.shiftKey && lastClickedCategoryIndex !== -1) {
+                            const start = Math.min(lastClickedCategoryIndex, i); 
+                            const end = Math.max(lastClickedCategoryIndex, i);
+                            if (globalRegistry.activeCategories === null) globalRegistry.activeCategories = new Set();
+                            for(let k=start; k<=end; k++) globalRegistry.activeCategories.add(k);
+                        } else if (e.ctrlKey || e.metaKey) {
+                            if (globalRegistry.activeCategories === null) { 
+                                globalRegistry.activeCategories = new Set(); 
+                                for(let k=0; k<totalCategories; k++) globalRegistry.activeCategories.add(k); 
+                                globalRegistry.activeCategories.delete(i); 
+                            } else { 
+                                if (globalRegistry.activeCategories.has(i)) globalRegistry.activeCategories.delete(i); 
+                                else globalRegistry.activeCategories.add(i); 
+                            }
+                        } else {
+                            if (globalRegistry.activeCategories !== null && globalRegistry.activeCategories.size === 1 && globalRegistry.activeCategories.has(i)) {
+                                globalRegistry.activeCategories = null; // Toggle off to show all
+                            } else {
+                                globalRegistry.activeCategories = new Set([i]); 
+                            }
+                        }
+
+                        if (window.Shiny && window.Shiny.setInputValue) {
+                            const activeList = globalRegistry.activeCategories === null ? null : Array.from(globalRegistry.activeCategories);
+                            window.Shiny.setInputValue("visible_groups", activeList);
+                        }
+                        lastClickedCategoryIndex = i;
+                        globalRegistry.forEach(entry => { if(entry.updateLegendUI) entry.updateLegendUI(); recalcAndApplyFilters(entry); });
+                    };
+                    row.appendChild(label); legendDiv.appendChild(row);
                 });
             } else if (legendData.var_type === 'continuous') {
-                const gradientContainer = document.createElement('div');
-                gradientContainer.style.display = 'flex';
-                gradientContainer.style.alignItems = 'center';
-                
-                const gradient = document.createElement('div');
-                gradient.style.cssText = `
-                    width: 15px;
-                    height: 100px;
-                    background: linear-gradient(to top, ${legendData.colors.join(', ')});
-                `;
-                gradientContainer.appendChild(gradient);
-                
-                const labels = document.createElement('div');
-                labels.style.marginLeft = '10px';
-                labels.innerHTML = `
-                    <div>Max: ${legendData.maxVal.toFixed(2)}</div>
-                    <div>Avg: ${legendData.midVal.toFixed(2)}</div>
-                    <div>Min: ${legendData.minVal.toFixed(2)}</div>
-                `;
-                gradientContainer.appendChild(labels);
-                
-                legendDiv.appendChild(gradientContainer);
+                 const gradContainer = document.createElement('div');
+                 gradContainer.style.cssText = 'display: flex; align-items: flex-start; margin-top: 5px;';
+                 const grad = document.createElement('div');
+                 grad.style.cssText = `width: 12px; height: 120px; background: linear-gradient(to top, ${legendData.colors.join(',')}); border-radius: 2px; margin-right: 8px;`;
+                 const lbls = document.createElement('div');
+                 lbls.style.cssText = 'display: flex; flex-direction: column; justify-content: space-between; height: 120px; color: #444; font-size: 11px;';
+                 lbls.innerHTML = `<span>${legendData.maxVal.toFixed(2)}</span><span>${legendData.midVal.toFixed(2)}</span><span>${legendData.minVal.toFixed(2)}</span>`;
+                 gradContainer.appendChild(grad); gradContainer.appendChild(lbls);
+                 legendDiv.appendChild(gradContainer);
             }
         };
 
         const createDownloadButton = function(container) {
-            const btnContainer = document.createElement('div');
-            btnContainer.style.cssText = `
-                position: absolute;
-                top: 10px;
-                left: 10px;
-                z-index: 100;
-            `;
-            btnContainer.className = 'download-btn-container';
-            
-            const downloadBtn = document.createElement('button');
-            downloadBtn.innerHTML = '⬇ Download';
-            downloadBtn.style.cssText = `
-                background: white;
-                border: 1px solid #ccc;
-                padding: 8px 12px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 12px;
-                font-family: sans-serif;
-            `;
-            
+            if (container.querySelector('.dl-btn-container')) return;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'dl-btn-container';
+            wrapper.style.cssText = `position: absolute; top: 10px; left: 10px; z-index: 100;`;
+            const btn = document.createElement('div');
+            btn.className = 'sp-download-btn';
+            btn.innerHTML = '⬇ Download';
             const menu = document.createElement('div');
-            menu.style.cssText = `
-                display: none;
-                position: absolute;
-                top: 100%;
-                left: 0;
-                margin-top: 4px;
-                background: white;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-                min-width: 120px;
-            `;
-            
-            const formats = ['PNG', 'SVG', 'PDF'];
-            formats.forEach(format => {
-                const option = document.createElement('div');
-                option.innerText = format;
-                option.style.cssText = `
-                    padding: 8px 12px;
-                    cursor: pointer;
-                    font-size: 12px;
-                    font-family: sans-serif;
-                `;
-                option.onmouseover = () => option.style.background = '#f0f0f0';
-                option.onmouseout = () => option.style.background = 'white';
-                option.onclick = () => {
-                    downloadPlot(format.toLowerCase());
-                    menu.style.display = 'none';
-                };
-                menu.appendChild(option);
+            menu.className = 'sp-menu';
+            ['PNG', 'SVG', 'PDF'].forEach(format => {
+                const item = document.createElement('div');
+                item.className = 'sp-menu-item';
+                item.innerText = `Download as ${format}`;
+                item.onclick = (e) => { e.stopPropagation(); downloadPlot(format.toLowerCase()); menu.style.display = 'none'; };
+                menu.appendChild(item);
             });
-            
-            downloadBtn.onclick = () => {
-                menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-            };
-            
-            document.addEventListener('click', (e) => {
-                if (!btnContainer.contains(e.target)) {
-                    menu.style.display = 'none';
-                }
-            });
-            
-            btnContainer.appendChild(downloadBtn);
-            btnContainer.appendChild(menu);
-            container.appendChild(btnContainer);
+            btn.onclick = (e) => { e.stopPropagation(); menu.style.display = menu.style.display === 'block' ? 'none' : 'block'; };
+            document.addEventListener('click', () => { menu.style.display = 'none'; });
+            wrapper.appendChild(btn); wrapper.appendChild(menu); container.appendChild(wrapper);
         };
-
-        const downloadPlot = async function(format) {
-            if (!plot) return;
-            
-            try {
-                const tempContainer = document.createElement('div');
-                tempContainer.style.cssText = `
-                    position: absolute;
-                    top: -10000px;
-                    left: -10000px;
-                    width: ${width}px;
-                    height: ${height}px;
-                `;
-                document.body.appendChild(tempContainer);
-                
-                const containerRect = container.getBoundingClientRect();
-
-                if (format === 'png') {
-                    await downloadAsPNG(containerRect);
-                } else if (format === 'svg') {
-                    await downloadAsSVG(tempContainer);
-                } else if (format === 'pdf') {
-                    await downloadAsPDF(containerRect);
-                }
-                
-                document.body.removeChild(tempContainer);
-            } catch (error) {
-                console.error('Download failed:', error);
-                alert('Download failed: ' + error.message);
-            }
-        };
-
-        const downloadAsPNG = async function(containerRect) {
-            const exportCanvas = document.createElement('canvas');
-            exportCanvas.width = width;
-            exportCanvas.height = height;
-            const ctx = exportCanvas.getContext('2d');
-            
-            ctx.fillStyle = currentXData.backgroundColor || 'white';
-            ctx.fillRect(0, 0, width, height);
-            
-            ctx.drawImage(canvas, margin.left, margin.top, canvas.width, canvas.height);
-            
-            if (svg && currentXData.showAxes) {
-                await drawSVGtoCanvas(ctx, svg.node());
-            }
-            
-            if (legendDiv) {
-                const originalBg = legendDiv.style.backgroundColor;
-                const originalShadow = legendDiv.style.boxShadow;
-                legendDiv.style.backgroundColor = 'white';
-                legendDiv.style.boxShadow = 'none';
-                
-                await drawLegendToCanvas(ctx, legendDiv, containerRect);
-                
-                legendDiv.style.backgroundColor = originalBg;
-                legendDiv.style.boxShadow = originalShadow;
-            }
-            
-            exportCanvas.toBlob((blob) => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'scatterplot.png';
-                a.click();
-                URL.revokeObjectURL(url);
-            });
-        };
-
+        
         const renderElementToCanvas = async function(element) {
             if (typeof window.html2canvas === 'undefined') {
-                const script = document.createElement('script');
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-                await new Promise((resolve, reject) => {
-                    script.onload = resolve;
-                    script.onerror = reject;
-                    document.head.appendChild(script);
-                });
+                const script = document.createElement('script'); script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                await new Promise((r) => { script.onload = r; document.head.appendChild(script); });
             }
-
-            const canvas = await html2canvas(element, {
-                backgroundColor: 'white',
-                useCORS: true,
-                allowTaint: true,
-            });
-            return canvas;
+            return html2canvas(element, { backgroundColor: null, useCORS: true, allowTaint: true, scale: 2 });
         };
 
         const drawLegendToCanvas = async function(ctx, legendElement, containerRect) {
-            if (legendElement.style.display === 'none' || !legendElement.offsetWidth || !legendElement.offsetHeight) {
-                return;
-            }
-
+            if (legendElement.style.display === 'none' || !legendElement.offsetWidth) return;
+            const origStyle = legendElement.style.cssText;
+            legendElement.style.boxShadow = 'none'; legendElement.style.backgroundColor = 'white'; legendElement.style.border = '1px solid #ddd';
             const legendCanvas = await renderElementToCanvas(legendElement);
+            legendElement.style.cssText = origStyle;
             const rect = legendElement.getBoundingClientRect();
-            const x = rect.left - containerRect.left;
-            const y = rect.top - containerRect.top;
-            
-            ctx.drawImage(legendCanvas, x, y, rect.width, rect.height);
+            const x = containerRect.width - rect.width - 10;
+            const y = 10;
+            ctx.drawImage(legendCanvas, 0, 0, legendCanvas.width, legendCanvas.height, x, y, rect.width, rect.height);
         };
 
-        const createVectorPointsSVG = function(xData, currentPoints, xDomainOrig, yDomainOrig, xScale, yScale, margin, width, height, currentRadius) {
-            const svgNS = 'http://www.w3.org/2000/svg';
-            const g = document.createElementNS(svgNS, 'g');
-            
-            const defaultColor = xData.options.pointColor || 'gray';
-            const opacity = xData.options.opacity || 0.8;
-            const pointRadius = currentRadius;
-
-            let colorScale = null;
-            if (xData.legend && xData.legend.var_type === 'continuous') {
-                colorScale = d3.scaleSequential(
-                    d3.piecewise(d3.interpolateRgb, xData.legend.colors)
-                ).domain([0, 1]);
-            }
-
-            const currentXDomain = xScale.domain();
-            const currentYDomain = yScale.domain();
-
-            currentPoints.forEach(p => {
-                const origX = xDomainOrig[0] + (p[0] + 1) / 2 * (xDomainOrig[1] - xDomainOrig[0]);
-                const origY = yDomainOrig[0] + (p[1] + 1) / 2 * (yDomainOrig[1] - yDomainOrig[0]);
-                
-                if (origX >= currentXDomain[0] && origX <= currentXDomain[1] &&
-                    origY >= currentYDomain[0] && origY <= currentYDomain[1]) {
-                    
-                    const cx = xScale(origX);
-                    const cy = yScale(origY);
-                    
-                    const circle = document.createElementNS(svgNS, 'circle');
-                    circle.setAttribute('cx', cx);
-                    circle.setAttribute('cy', cy);
-                    circle.setAttribute('r', pointRadius);
-
-                    let pointColor = defaultColor;
-                    
-                    if (p.length > 2 && xData.legend) {
-                        if (xData.legend.var_type === 'categorical') {
-                            const colorIndex = Math.floor(p[2]);
-                            if (xData.legend.colors[colorIndex]) {
-                                pointColor = xData.legend.colors[colorIndex];
-                            }
-                        } else if (xData.legend.var_type === 'continuous') {
-                            pointColor = colorScale(p[2]);
-                        }
-                    }
-                    
-                    circle.setAttribute('fill', pointColor);
-                    circle.setAttribute('fill-opacity', opacity);
-                    g.appendChild(circle);
-                }
-            });
-            
-            return g;
-        };
-
-        const getPlotScales = function(xDom, yDom) {
-            if (typeof d3 === 'undefined') {
-                return null;
-            }
-            
-            const plotXScale = d3.scaleLinear()
-                .domain(xDom)
-                .range([margin.left, width - margin.right]);
-                
-            const plotYScale = d3.scaleLinear()
-                .domain(yDom)
-                .range([height - margin.bottom, margin.top]);
-                
-            return { plotXScale, plotYScale };
-        };
-
-        const downloadAsSVG = async function(tempContainer) {
-            const svgNS = 'http://www.w3.org/2000/svg';
-            const exportSVG = document.createElementNS(svgNS, 'svg');
-            exportSVG.setAttribute('width', width);
-            exportSVG.setAttribute('height', height);
-            exportSVG.setAttribute('xmlns', svgNS);
-            
-            const numPoints = currentPoints ? currentPoints.length : 0;
-            const useVector = numPoints <= VECTOR_POINT_LIMIT;
-            const SVG_VISUAL_CORRECTION = 1.20;
-
-            let currentPointSize;
-
-            if (plot) {
-                const cameraDistanceArray = plot.get('camera').distance;
-                const cameraDistance = (cameraDistanceArray[0] + cameraDistanceArray[1]) / 2;
-                const baseSize = plot.get('pointSize');
-                const scaleMode = plot.get('pointScaleMode');
-                
-                const zoom = 1 / cameraDistance;
-                
-                if (scaleMode === 'constant') {
-                    currentPointSize = baseSize;
-                } else if (scaleMode === 'linear') {
-                    currentPointSize = baseSize * zoom;
-                } else if (scaleMode === 'asinh') {
-                    currentPointSize = baseSize * (Math.asinh(zoom / 5) + 1);
-                } else {
-                    currentPointSize = baseSize;
-                }
-            } else {
-                currentPointSize = currentXData.options.size || 3;
-            }
-
-            const currentRadius = (currentPointSize / 2) * SVG_VISUAL_CORRECTION;
-
-            const bgRect = document.createElementNS(svgNS, 'rect');
-            bgRect.setAttribute('width', width);
-            bgRect.setAttribute('height', height);
-            bgRect.setAttribute('fill', currentXData.backgroundColor || 'white');
-            exportSVG.appendChild(bgRect);
-            
-            if (useVector && d3Available) {
-                let vectorPlotG;
-                let currentDomainX, currentDomainY, exportXScale, exportYScale;
-                
-                if (xScale && yScale && xDomainOrig && yDomainOrig) {
-                    currentDomainX = xScale.domain();
-                    currentDomainY = yScale.domain();
-                    ({ plotXScale: exportXScale, plotYScale: exportYScale } = getPlotScales(currentDomainX, currentDomainY));
-                } else {
-                    if (currentNormDomains && currentNormDomains.x && currentNormDomains.y) {
-                        currentDomainX = [
-                            xDomainOrig[0] + (currentNormDomains.x[0] + 1) / 2 * (xDomainOrig[1] - xDomainOrig[0]),
-                            xDomainOrig[0] + (currentNormDomains.x[1] + 1) / 2 * (xDomainOrig[1] - xDomainOrig[0])
-                        ];
-                        currentDomainY = [
-                            yDomainOrig[0] + (currentNormDomains.y[0] + 1) / 2 * (yDomainOrig[1] - yDomainOrig[0]),
-                            yDomainOrig[0] + (currentNormDomains.y[1] + 1) / 2 * (yDomainOrig[1] - yDomainOrig[0])
-                        ];
-                    } else {
-                        currentDomainX = xDomainOrig || [-1, 1];
-                        currentDomainY = yDomainOrig || [-1, 1];
-                    }
-                    ({ plotXScale: exportXScale, plotYScale: exportYScale } = getPlotScales(currentDomainX, currentDomainY));
-                }
-
-                if (exportXScale && exportYScale) {
-                    vectorPlotG = createVectorPointsSVG(
-                        currentXData, 
-                        currentPoints, 
-                        xDomainOrig || [-1, 1],
-                        yDomainOrig || [-1, 1],
-                        exportXScale,
-                        exportYScale,
-                        margin,
-                        width,
-                        height,
-                        currentRadius
-                    );
-                
-                    const defs = document.createElementNS(svgNS, 'defs');
-                    const clipPath = document.createElementNS(svgNS, 'clipPath');
-                    clipPath.setAttribute('id', 'plotClip');
-                    const clipRect = document.createElementNS(svgNS, 'rect');
-                    clipRect.setAttribute('x', margin.left);
-                    clipRect.setAttribute('y', margin.top);
-                    clipRect.setAttribute('width', width - margin.left - margin.right);
-                    clipRect.setAttribute('height', height - margin.top - margin.bottom);
-                    clipPath.appendChild(clipRect);
-                    defs.appendChild(clipPath);
-                    exportSVG.appendChild(defs);
-                    
-                    vectorPlotG.setAttribute('clip-path', 'url(#plotClip)');
-                    exportSVG.appendChild(vectorPlotG);
-                } else {
-                    const canvasDataURL = canvas.toDataURL('image/png');
-                    const image = document.createElementNS(svgNS, 'image');
-                    image.setAttribute('x', margin.left);
-                    image.setAttribute('y', margin.top);
-                    image.setAttribute('width', width - margin.left - margin.right);
-                    image.setAttribute('height', height - margin.top - margin.bottom);
-                    image.setAttribute('href', canvasDataURL);
-                    exportSVG.appendChild(image);
-                }
-            } else {
-                const canvasDataURL = canvas.toDataURL('image/png');
-                const image = document.createElementNS(svgNS, 'image');
-                image.setAttribute('x', margin.left);
-                image.setAttribute('y', margin.top);
-                image.setAttribute('width', width - margin.left - margin.right);
-                image.setAttribute('height', height - margin.top - margin.bottom);
-                image.setAttribute('href', canvasDataURL);
-                exportSVG.appendChild(image);
-            }
-
-            if (svg && currentXData.showAxes) {
-                const axesClone = svg.node().cloneNode(true);
-                Array.from(axesClone.children).forEach(child => {
-                    exportSVG.appendChild(child.cloneNode(true));
-                });
-            }
-            
-            if (legendDiv && currentXData.legend) {
-                const legendRes = createLegendSVG(currentXData.legend);
-                if (legendRes.defs) {
-                    exportSVG.appendChild(legendRes.defs);
-                }
-                exportSVG.appendChild(legendRes.g);
-            }
-            
-            const serializer = new XMLSerializer();
-            const svgString = serializer.serializeToString(exportSVG);
-            const blob = new Blob([svgString], { type: 'image/svg+xml' });
+        const drawSVGtoCanvas = async function(ctx, svgEl) {
+            const ser = new XMLSerializer();
+            let str = ser.serializeToString(svgEl);
+            if (!str.includes('xmlns')) str = str.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+            const blob = new Blob([str], { type: 'image/svg+xml;charset=utf-8' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'scatterplot.svg';
-            a.click();
-            URL.revokeObjectURL(url);
-        };
-
-        const downloadAsPDF = async function(containerRect) {
-            if (typeof window.jspdf === 'undefined') {
-                const script = document.createElement('script');
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-                await new Promise((resolve, reject) => {
-                    script.onload = resolve;
-                    script.onerror = reject;
-                    document.head.appendChild(script);
-                });
-            }
-            
-            const { jsPDF } = window.jspdf;
-            
-            const exportCanvas = document.createElement('canvas');
-            exportCanvas.width = width;
-            exportCanvas.height = height;
-            const ctx = exportCanvas.getContext('2d');
-            
-            ctx.fillStyle = currentXData.backgroundColor || 'white';
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(canvas, margin.left, margin.top, canvas.width, canvas.height);
-            
-            if (svg && currentXData.showAxes) {
-                await drawSVGtoCanvas(ctx, svg.node());
-            }
-            
-            if (legendDiv) {
-                const originalBg = legendDiv.style.backgroundColor;
-                const originalShadow = legendDiv.style.boxShadow;
-                legendDiv.style.backgroundColor = 'white';
-                legendDiv.style.boxShadow = 'none';
-                
-                await drawLegendToCanvas(ctx, legendDiv, containerRect);
-                
-                legendDiv.style.backgroundColor = originalBg;
-                legendDiv.style.boxShadow = originalShadow;
-            }
-            
-            const imgData = exportCanvas.toDataURL('image/png');
-            const pdf = new jsPDF({
-                orientation: width > height ? 'landscape' : 'portrait',
-                unit: 'px',
-                format: [width, height]
-            });
-            
-            pdf.addImage(imgData, 'PNG', 0, 0, width, height);
-            pdf.save('scatterplot.pdf');
-        };
-
-        const drawSVGtoCanvas = async function(ctx, svgElement) {
-            const serializer = new XMLSerializer();
-            let svgString = serializer.serializeToString(svgElement);
-            
-            if (!svgString.includes('xmlns')) {
-                svgString = svgString.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-            }
-            
-            const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            
-            return new Promise((resolve, reject) => {
+            return new Promise(r => {
                 const img = new Image();
-                img.onload = () => {
-                    ctx.drawImage(img, 0, 0);
-                    URL.revokeObjectURL(url);
-                    resolve();
-                };
-                img.onerror = reject;
+                img.onload = () => { ctx.drawImage(img, 0, 0); URL.revokeObjectURL(url); r(); };
                 img.src = url;
             });
         };
 
-        const createLegendSVG = function(legendData) {
+        const downloadPlot = async function(format) {
+            if(!plot) return;
+            const rect = container.getBoundingClientRect();
+            const w = rect.width; const h = rect.height;
+            const tempContainer = document.createElement('div');
+            tempContainer.style.cssText = `position:absolute; top:-10000px; left:-10000px; width:${w}px; height:${h}px; overflow:hidden;`;
+            document.body.appendChild(tempContainer);
+            try {
+                if (format === 'png') await downloadAsPNG(w, h);
+                else if (format === 'svg') await downloadAsSVG(w, h);
+                else if (format === 'pdf') await downloadAsPDF(w, h);
+            } catch (e) { console.error(e); alert('Download failed: '+e.message); }
+            document.body.removeChild(tempContainer);
+        };
+
+        const downloadAsPNG = async function(w, h) {
+            const exCanvas = document.createElement('canvas'); exCanvas.width = w; exCanvas.height = h;
+            const ctx = exCanvas.getContext('2d');
+            ctx.fillStyle = 'white'; ctx.fillRect(0,0,w,h);
+            ctx.drawImage(canvas, margin.left, margin.top, canvas.width, canvas.height);
+            if(svg) await drawSVGtoCanvas(ctx, svg.node());
+            if(legendDiv && legendDiv.style.display !== 'none') { await drawLegendToCanvas(ctx, legendDiv, {width: w, height: h}); }
+            const link = document.createElement('a'); link.download = 'scatterplot.png';
+            link.href = exCanvas.toDataURL(); link.click();
+        };
+        
+        const downloadAsPDF = async function(w, h) {
+            if (!window.jspdf) {
+                 const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+                 await new Promise(r => { s.onload = r; document.head.appendChild(s); });
+            }
+            const { jsPDF } = window.jspdf;
+            const exCanvas = document.createElement('canvas'); exCanvas.width = w; exCanvas.height = h;
+            const ctx = exCanvas.getContext('2d');
+            ctx.fillStyle = 'white'; ctx.fillRect(0,0,w,h);
+            ctx.drawImage(canvas, margin.left, margin.top, canvas.width, canvas.height);
+            if(svg) await drawSVGtoCanvas(ctx, svg.node());
+            if(legendDiv && legendDiv.style.display !== 'none') { await drawLegendToCanvas(ctx, legendDiv, {width: w, height: h}); }
+            const pdf = new jsPDF({ orientation: w>h?'landscape':'portrait', unit:'px', format:[w, h] });
+            pdf.addImage(exCanvas.toDataURL('image/png'), 'PNG', 0, 0, w, h);
+            pdf.save('scatterplot.pdf');
+        };
+
+        const createLegendSVG = function(d, w) {
             const svgNS = 'http://www.w3.org/2000/svg';
             const g = document.createElementNS(svgNS, 'g');
-            g.setAttribute('transform', `translate(${width - 160}, 10)`);
-            
-            let defs = null;
+            if (!d || !d.var_type || d.var_type === 'none') return null;
 
-            const bg = document.createElementNS(svgNS, 'rect');
-            bg.setAttribute('width', 150);
-            bg.setAttribute('height', legendData.var_type === 'categorical' ? 
-                (legendData.names.length * 20 + 30) : 150);
-            bg.setAttribute('fill', 'rgba(255,255,255,0.8)');
-            bg.setAttribute('rx', 5);
-            g.appendChild(bg);
-            
-            if (legendData.title) {
-                const title = document.createElementNS(svgNS, 'text');
-                title.setAttribute('x', 75);
-                title.setAttribute('y', 20);
-                title.setAttribute('text-anchor', 'middle');
-                title.setAttribute('font-weight', 'bold');
-                title.setAttribute('font-size', '14');
-                title.textContent = legendData.title;
-                g.appendChild(title);
+            g.setAttribute('transform', `translate(${w - 140}, 10)`);
+            const box = document.createElementNS(svgNS, 'rect');
+            const h = d.var_type === 'categorical' ? (d.names.length * 20 + 35) : 150;
+            box.setAttribute('width', 130); box.setAttribute('height', h);
+            box.setAttribute('fill', 'white'); box.setAttribute('stroke', '#ddd'); box.setAttribute('rx', 4);
+            g.appendChild(box);
+            if(d.title) {
+                const t = document.createElementNS(svgNS, 'text');
+                t.setAttribute('x', 65); t.setAttribute('y', 20); t.setAttribute('text-anchor', 'middle'); 
+                t.setAttribute('font-family', 'sans-serif'); t.setAttribute('font-weight', 'bold'); t.setAttribute('font-size', '12'); 
+                t.textContent = d.title; g.appendChild(t);
             }
-            
-            if (legendData.var_type === 'categorical') {
-                let yOffset = 40;
-                legendData.names.forEach((name, i) => {
-                    const circle = document.createElementNS(svgNS, 'circle');
-                    circle.setAttribute('cx', 15);
-                    circle.setAttribute('cy', yOffset - 4);
-                    circle.setAttribute('r', 6);
-                    circle.setAttribute('fill', legendData.colors[i]);
-                    g.appendChild(circle);
-
-                    const text = document.createElementNS(svgNS, 'text');
-                    text.setAttribute('x', 30);
-                    text.setAttribute('y', yOffset);
-                    text.setAttribute('font-size', '12');
-                    text.textContent = name;
-                    g.appendChild(text);
-
-                    yOffset += 20;
+            if (d.var_type === 'categorical') {
+                d.names.forEach((n, i) => {
+                    const y = 45 + i*20;
+                    const group = document.createElementNS(svgNS, 'g');
+                    if (globalRegistry.activeCategories !== null && !globalRegistry.activeCategories.has(i)) {
+                        group.setAttribute('opacity', '0.3');
+                    }
+                    const c = document.createElementNS(svgNS, 'circle');
+                    c.setAttribute('cx', 15); c.setAttribute('cy', y-4); c.setAttribute('r', 5); c.setAttribute('fill', d.colors[i]);
+                    group.appendChild(c);
+                    const txt = document.createElementNS(svgNS, 'text');
+                    txt.setAttribute('x', 30); txt.setAttribute('y', y);
+                    txt.setAttribute('font-family', 'sans-serif'); txt.setAttribute('font-size', '11');
+                    txt.textContent = n; group.appendChild(txt);
+                    g.appendChild(group);
                 });
-            } else if (legendData.var_type === 'continuous') {
-                defs = document.createElementNS(svgNS, 'defs');
-                const linearGradient = document.createElementNS(svgNS, 'linearGradient');
-                linearGradient.setAttribute('id', 'continuousGradient');
-                linearGradient.setAttribute('x1', '0%');
-                linearGradient.setAttribute('y1', '100%');
-                linearGradient.setAttribute('x2', '0%');
-                linearGradient.setAttribute('y2', '0%');
-                
-                const numStops = legendData.colors.length;
-                legendData.colors.forEach((color, i) => {
-                    const stop = document.createElementNS(svgNS, 'stop');
-                    stop.setAttribute('offset', `${(i / (numStops - 1)) * 100}%`);
-                    stop.setAttribute('stop-color', color);
-                    linearGradient.appendChild(stop);
+            } else if (d.var_type === 'continuous' && d.colors) {
+                const defs = document.createElementNS(svgNS, 'defs');
+                const lg = document.createElementNS(svgNS, 'linearGradient');
+                lg.setAttribute('id', 'legGrad'); lg.setAttribute('x1', '0%'); lg.setAttribute('y1', '100%'); lg.setAttribute('x2', '0%'); lg.setAttribute('y2', '0%');
+                d.colors.forEach((c, i) => {
+                    const s = document.createElementNS(svgNS, 'stop');
+                    s.setAttribute('offset', `${(i/(d.colors.length-1))*100}%`); s.setAttribute('stop-color', c);
+                    lg.appendChild(s);
                 });
-                defs.appendChild(linearGradient);
-                
-                const gradContainer = document.createElementNS(svgNS, 'g');
-                gradContainer.setAttribute('transform', 'translate(10, 40)');
-                
-                const gradRect = document.createElementNS(svgNS, 'rect');
-                gradRect.setAttribute('x', 0);
-                gradRect.setAttribute('y', 0);
-                gradRect.setAttribute('width', 15);
-                gradRect.setAttribute('height', 100);
-                gradRect.setAttribute('fill', 'url(#continuousGradient)');
-                gradContainer.appendChild(gradRect);
-
-                const maxLabel = document.createElementNS(svgNS, 'text');
-                maxLabel.setAttribute('x', 30);
-                maxLabel.setAttribute('y', 10);
-                maxLabel.setAttribute('font-size', '12');
-                maxLabel.textContent = `Max: ${legendData.maxVal.toFixed(2)}`;
-                gradContainer.appendChild(maxLabel);
-                
-                const midLabel = document.createElementNS(svgNS, 'text');
-                midLabel.setAttribute('x', 30);
-                midLabel.setAttribute('y', 55);
-                midLabel.setAttribute('font-size', '12');
-                midLabel.textContent = `Avg: ${legendData.midVal.toFixed(2)}`;
-                gradContainer.appendChild(midLabel);
-                
-                const minLabel = document.createElementNS(svgNS, 'text');
-                minLabel.setAttribute('x', 30);
-                minLabel.setAttribute('y', 100);
-                minLabel.setAttribute('font-size', '12');
-                minLabel.textContent = `Min: ${legendData.minVal.toFixed(2)}`;
-                gradContainer.appendChild(minLabel);
-
-                g.appendChild(gradContainer);
+                defs.appendChild(lg); g.appendChild(defs); 
+                const r = document.createElementNS(svgNS, 'rect');
+                r.setAttribute('x', 10); r.setAttribute('y', 35); r.setAttribute('width', 15); r.setAttribute('height', 100); r.setAttribute('fill', 'url(#legGrad)');
+                g.appendChild(r);
+                [d.maxVal, d.midVal, d.minVal].forEach((v, i) => {
+                    const txt = document.createElementNS(svgNS, 'text');
+                    txt.setAttribute('x', 35); txt.setAttribute('y', 45 + i*45);
+                    txt.setAttribute('font-family', 'sans-serif'); txt.setAttribute('font-size', '11');
+                    txt.textContent = v.toFixed(2); g.appendChild(txt);
+                });
             }
-
-            return { defs, g };
+            return g;
         };
 
-        const autoAdjustZoom = function(xDomain, yDomain) {
-            if (!xDomain[0] || !xDomain[1] || !yDomain[0] || !yDomain[1]) {
-                return;
-            }
+        const downloadAsSVG = async function(w, h) {
+            if(!plot) return;
+            const registryEntry = globalRegistry.get(plotId);
+            const xData = registryEntry; 
+            const rX = xData.xData; const rY = xData.yData; const rZ = xData.zData;
+            const nPoints = rX ? rX.length : 0;
+            const useVector = nPoints <= VECTOR_POINT_LIMIT;
+            let svgContent = '';
+            const cpId = 'pc_' + Math.random().toString(36).substr(2,9);
+            svgContent += `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`;
+            svgContent += `<rect width="${w}" height="${h}" fill="white"/>`;
             
-            // ✅ Calculate aspect ratio of SPECIFIED ranges (not data extent)
-            const specifiedRangeX = xDomain[1] - xDomain[0];
-            const specifiedRangeY = yDomain[1] - yDomain[0];
-            const specifiedAspect = specifiedRangeX / specifiedRangeY;
-            
-            // ✅ Calculate canvas aspect ratio
-            const canvasWidth = width - margin.left - margin.right;
-            const canvasHeight = height - margin.top - margin.bottom;
-            const canvasAspect = canvasWidth / canvasHeight;
-            
-            // ✅ Zoom to show FULL normalized range [-1, 1] in both dimensions
-            // But adjust for aspect ratio to avoid blank space
-            let zoomX, zoomY, zoomWidth, zoomHeight;
-            
-            if (specifiedAspect > canvasAspect) {
-                // Specified range is wider - fit width, extend height
-                zoomWidth = 2;  // Show full [-1, 1] in x
-                zoomHeight = 2 * (specifiedAspect / canvasAspect);
-                zoomX = -1;
-                zoomY = -zoomHeight / 2;
+            if (useVector && d3Available && rX) {
+                 const internalXScale = plot.get('xScale'); const internalYScale = plot.get('yScale');
+                 let xDomExp, yDomExp;
+                 if (internalXScale && internalYScale) {
+                     const vnX = internalXScale.domain(); const vnY = internalYScale.domain();
+                     xDomExp = [xDomainOrig[0] + (vnX[0]+1)/2 * (xDomainOrig[1]-xDomainOrig[0]), xDomainOrig[0] + (vnX[1]+1)/2 * (xDomainOrig[1]-xDomainOrig[0])];
+                     yDomExp = [yDomainOrig[0] + (vnY[0]+1)/2 * (yDomainOrig[1]-yDomainOrig[0]), yDomainOrig[0] + (vnY[1]+1)/2 * (yDomainOrig[1]-yDomainOrig[0])];
+                 } else { xDomExp = xDomainOrig; yDomExp = yDomainOrig; }
+                 
+                 const xSc = d3.scaleLinear().domain(xDomExp).range([margin.left, w - margin.right]);
+                 const ySc = d3.scaleLinear().domain(yDomExp).range([h - margin.bottom, margin.top]);
+                 
+                 const minX = Math.min(xDomExp[0], xDomExp[1]), maxX = Math.max(xDomExp[0], xDomExp[1]);
+                 const minY = Math.min(yDomExp[0], yDomExp[1]), maxY = Math.max(yDomExp[0], yDomExp[1]);
+                 const circleR = (xData.options.size||3)/2;
+                 const opacity = xData.options.opacity || 0.8;
+                 
+                 const defaultColor = Array.isArray(xData.options.pointColor) ? xData.options.pointColor[0] : (xData.options.pointColor || '#0072B2');
+                 let colorScale = null, colors = null, useColorBy = false;
+                 if (xData.legend) {
+                    if (xData.legend.var_type === 'continuous') {
+                        useColorBy = true;
+                        colorScale = d3.scaleSequential(d3.piecewise(d3.interpolateRgb, xData.legend.colors)).domain([0, 1]);
+                    } else if (xData.legend.var_type === 'categorical') {
+                        colors = xData.legend.colors;
+                    }
+                 }
+                 const isCategorical = (xData.legend && xData.legend.var_type === 'categorical');
+                 const shouldFilter = isCategorical && (globalRegistry.activeCategories !== null);
+
+                 let pointsStr = `<g clip-path="url(#${cpId})">`;
+                 for (let i = 0; i < nPoints; i++) {
+                    let passStrainer = true;
+                    if (globalRegistry.activeStrainers) {
+                        const strainers = globalRegistry.activeStrainers;
+                        const keys = Object.keys(strainers);
+                        if (keys.length > 0) {
+                            const fBuffs = filterBuffers;
+                            for (let k = 0; k < keys.length; k++) {
+                                const vName = keys[k];
+                                if (fBuffs[vName]) {
+                                    const val = fBuffs[vName][i];
+                                    if (val < strainers[vName][0] || val > strainers[vName][1]) { passStrainer = false; break; }
+                                }
+                            }
+                        }
+                    }
+                    if (!passStrainer) continue;
+
+                    if (shouldFilter && rZ) {
+                         const cat = Math.floor(rZ[i]);
+                         if (!globalRegistry.activeCategories.has(cat)) continue;
+                    }
+
+                    const nx = rX[i]; const ny = rY[i];
+                    const ox = xDomainOrig[0] + (nx+1)/2 * (xDomainOrig[1]-xDomainOrig[0]);
+                    const oy = yDomainOrig[0] + (ny+1)/2 * (yDomainOrig[1]-yDomainOrig[0]);
+                    
+                    if (ox >= minX && ox <= maxX && oy >= minY && oy <= maxY) {
+                        const cx = xSc(ox).toFixed(2);
+                        const cy = ySc(oy).toFixed(2);
+                        let fill = defaultColor;
+                        if (useColorBy && rZ) {
+                            fill = colorScale(rZ[i]);
+                        } else if (isCategorical && rZ) {
+                            const idx = Math.floor(rZ[i]);
+                            if(colors && colors[idx]) fill = colors[idx];
+                        }
+                        pointsStr += `<circle cx="${cx}" cy="${cy}" r="${circleR}" fill="${fill}" fill-opacity="${opacity}"/>`;
+                    }
+                 }
+                 pointsStr += '</g>';
+                 svgContent += `<defs><clipPath id="${cpId}"><rect x="${margin.left}" y="${margin.top}" width="${w-margin.left-margin.right}" height="${h-margin.top-margin.bottom}"/></clipPath></defs>`;
+                 svgContent += pointsStr;
+                 
+                 if(svg) {
+                     const ser = new XMLSerializer();
+                     let axesStr = ser.serializeToString(svg.node());
+                     if (axesStr.startsWith('<svg')) {
+                         axesStr = axesStr.substring(axesStr.indexOf('>')+1, axesStr.lastIndexOf('<'));
+                     }
+                     svgContent += axesStr;
+                 }
+                 if(legendDiv && xData.legend) {
+                    const legG = createLegendSVG(xData.legend, w);
+                    if (legG) { const ser = new XMLSerializer(); svgContent += ser.serializeToString(legG); }
+                 }
             } else {
-                // Specified range is taller - fit height, extend width
-                zoomHeight = 2;  // Show full [-1, 1] in y
-                zoomWidth = 2 * (canvasAspect / specifiedAspect);
-                zoomX = -zoomWidth / 2;
-                zoomY = -1;
+                const imgData = canvas.toDataURL('image/png');
+                svgContent += `<image x="${margin.left}" y="${margin.top}" width="${w-margin.left-margin.right}" height="${h-margin.top-margin.bottom}" href="${imgData}"/>`;
             }
             
-            console.log('Auto-zoom to FULL specified range:', { 
-                x: zoomX, 
-                y: zoomY, 
-                width: zoomWidth, 
-                height: zoomHeight,
-                specifiedAspect,
-                canvasAspect
-            });
-            
-            plot.zoomToArea({ 
-                x: zoomX, 
-                y: zoomY, 
-                width: zoomWidth, 
-                height: zoomHeight 
-            }, true);
-            
-            // ✅ Force axis update
-            requestAnimationFrame(() => {
-                updateAxesFromCamera();
-            });
-        };
-
-        const updateAxes = function() {
-            if (!d3Available || !xScale || !yScale || !svg || !svg.node() || !xAxis || !yAxis || !xAxisG || !yAxisG) return;
-
-            xAxis.scale(xScale);
-            yAxis.scale(yScale);
-
-            xAxisG.call(xAxis);
-            yAxisG.call(yAxis);
-
-            svg.selectAll('.domain').attr('stroke', 'black').attr('stroke-width', 1.5);
-            svg.selectAll('.tick line').attr('stroke', 'black');
-            svg.selectAll('.tick text').attr('fill', 'black').style('font-size', '11px');
-        };
-
-        const updateLabels = function(xlab, ylab) {
-            if (!svg) return;
-            svg.select('.x-label').text(xlab || 'X');
-            svg.select('.y-label').text(ylab || 'Y');
+            svgContent += '</svg>';
+            const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'scatterplot.svg'; a.click(); URL.revokeObjectURL(url);
         };
 
         return {
             renderValue: async function(xData) {
-                // GENE NAMES
-                if (xData.gene_names && Array.isArray(xData.gene_names)) {
-                    console.log(`Gene names loaded: ${xData.gene_names.length} names`);
-                } else {
-                    xData.gene_names = [];
-                }
+                console.log("[SP-DEBUG] renderValue called for:", xData.plotId);
+                loader.style.display = 'block'; 
+                if (xData.gene_names && Array.isArray(xData.gene_names)) console.log(`Names: ${xData.gene_names.length}`);
+                else xData.gene_names = [];
 
                 plotId = el.id || xData.plotId || ('plot_' + Math.random().toString(36).substr(2, 9));
-                console.log('Plot ID:', plotId);
-                console.log('Container ID:', el.id);
 
-                currentXData = xData;
-
-                // NEW: Use dataVersion if provided (from R)
-                const dataVersion = xData.dataVersion || xData.points.length + '_' + Date.now();
+                const n = xData.n_points;
+                dataBuffers.x = decodeBase64(xData.x);
+                dataBuffers.y = decodeBase64(xData.y);
+                dataBuffers.z = decodeBase64(xData.z);
                 
-                // OLD: Your old key (keep for backward compat)
-                const oldKey = `${plotId}_${xData.points.length}_${xData.x_min}_${xData.x_max}_${xData.y_min}_${xData.y_max}`;
+                filterBuffers = {};
+                if (xData.filter_data) {
+                    Object.keys(xData.filter_data).forEach(key => {
+                        filterBuffers[key] = decodeBase64(xData.filter_data[key]);
+                    });
+                }
                 
-                // NEW: Stronger key with dataVersion
-                const dataKey = `${plotId}_v${dataVersion}`;
-
-                if (window.__lastDataKeys === undefined) window.__lastDataKeys = {};
-                const lastKey = window.__lastDataKeys[plotId];
-
-                // FORCE REDRAW if dataVersion changed
-                if (lastKey === dataKey && plot && currentPoints && currentPoints.length > 0) {
-                    console.log(`Skipping re-render for ${plotId} (dataVersion unchanged)`);
-                    return;
+                let catData = null;
+                if (xData.group_data) {
+                    catData = decodeBase64(xData.group_data);
+                }
+                
+                if (dataBuffers.x && dataBuffers.z && dataBuffers.z.length > dataBuffers.x.length) {
+                    dataBuffers.z = dataBuffers.z.subarray(0, dataBuffers.x.length);
                 }
 
-                console.log(`FULL REDRAW: New dataVersion ${dataVersion}`);
-                window.__lastDataKeys[plotId] = dataKey;
-
-                // DESTROY OLD PLOT IF EXISTS
-                if (plot) {
-                    console.log(`Destroying old plot ${plotId}`);
-                    plot.destroy();
-                    plot = null;
+                if (plot && window.__lastPerfMode !== xData.performanceMode) { 
+                    plot.destroy(); plot = null; 
                 }
+                window.__lastPerfMode = xData.performanceMode;
 
-                if (typeof d3 === 'undefined') {
-                    try {
-                        const d3Module = await import('https://esm.sh/d3@7');
-                        window.d3 = d3Module;
-                        d3Available = true;
-                    } catch (error) {
-                        console.error('Failed to load D3:', error);
-                        return;
-                    }
-                } else {
-                    d3Available = true;
+                if (window.__spUnsubscribers[plotId]) {
+                    window.__spUnsubscribers[plotId].forEach(unsub => {
+                        if (typeof unsub === 'function') unsub();
+                    });
                 }
+                window.__spUnsubscribers[plotId] = [];
 
-                if (xData.backgroundColor) {
-                    canvas.style.backgroundColor = xData.backgroundColor;
-                } else {
-                    canvas.style.backgroundColor = 'white';
-                }
+                if (typeof d3 === 'undefined') { window.d3 = await import('https://esm.sh/d3@7'); d3Available = true; } else d3Available = true;
 
-                let hasAxes = xData.showAxes;
-                let newMargin = hasAxes ? { top: 20, right: 20, bottom: 50, left: 60 } : { top: 0, right: 0, bottom: 0, left: 0 };
-                margin = newMargin;
+                if (xData.backgroundColor) canvas.style.backgroundColor = xData.backgroundColor; else canvas.style.backgroundColor = 'white';
 
-                let svgNeedsRecreate = false;
-                if (hasAxes && !svg) {
-                    svgNeedsRecreate = true;
-                } else if (!hasAxes && svg) {
-                    svg.remove();
-                    svg = null;
-                }
+                xDomainOrig = [xData.x_min, xData.x_max]; yDomainOrig = [xData.y_min, xData.y_max];
 
-                xDomainOrig = [xData.x_min, xData.x_max];
-                yDomainOrig = [xData.y_min, xData.y_max];
-
-                if (d3Available && hasAxes && svgNeedsRecreate) {
+                if (d3Available && xData.showAxes) {
                     if (svg) svg.remove();
-                    svg = d3.select(container).append('svg')
-                        .attr('width', width)
-                        .attr('height', height)
-                        .style('position', 'absolute')
-                        .style('top', 0)
-                        .style('left', 0)
-                        .style('pointer-events', 'none');
-
+                    svg = d3.select(container).append('svg').attr('width', width).attr('height', height).style('position', 'absolute').style('top', 0).style('left', 0).style('pointer-events', 'none');
                     xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', `translate(0, ${height - margin.bottom})`);
-                    svg.append('text')
-                        .attr('class', 'x-label')
-                        .attr('x', margin.left + (width - margin.left - margin.right) / 2)
-                        .attr('y', height - 10)
-                        .attr('text-anchor', 'middle')
-                        .attr('fill', 'black')
-                        .style('font-size', '12px')
-                        .text(xData.xlab || 'X');
-
                     yAxisG = svg.append('g').attr('class', 'y-axis').attr('transform', `translate(${margin.left}, 0)`);
-                    svg.append('text')
-                        .attr('class', 'y-label')
-                        .attr('transform', 'rotate(-90)')
-                        .attr('x', -(margin.top + (height - margin.top - margin.bottom) / 2))
-                        .attr('y', 15)
-                        .attr('text-anchor', 'middle')
-                        .attr('fill', 'black')
-                        .style('font-size', '12px')
-                        .text(xData.ylab || 'Y');
-
-                    // ✅ RESTORE: Initialize with original domains
+                    svg.append('text').attr('class','x-label').attr('x', margin.left+(width-margin.left-margin.right)/2).attr('y',height-10).text(xData.xlab||'X').attr('text-anchor','middle').style('font-family','sans-serif').style('font-size','12px');
+                    svg.append('text').attr('class','y-label').attr('transform','rotate(-90)').attr('x', -(margin.top+(height-margin.top-margin.bottom)/2)).attr('y',15).text(xData.ylab||'Y').attr('text-anchor','middle').style('font-family','sans-serif').style('font-size','12px');
                     xScale = d3.scaleLinear().domain(xDomainOrig).range([margin.left, width - margin.right]);
                     yScale = d3.scaleLinear().domain(yDomainOrig).range([height - margin.bottom, margin.top]);
-                    
-                    xAxis = d3.axisBottom(xScale).ticks(6);
-                    yAxis = d3.axisLeft(yScale).ticks(6);
-                    
-                    xAxisG.call(xAxis);
-                    yAxisG.call(yAxis);
-                    svg.selectAll('.domain').attr('stroke', 'black').attr('stroke-width', 1.5);
+                    xAxis = d3.axisBottom(xScale).ticks(6); yAxis = d3.axisLeft(yScale).ticks(6);
+                    xAxisG.call(xAxis); yAxisG.call(yAxis);
+                } else if (svg) { svg.remove(); svg=null; }
+
+                if (xData.showTooltip && !tooltip) {
+                    tooltip = document.createElement('div'); tooltip.style.cssText = `position:absolute;background:rgba(0,0,0,0.85);color:white;padding:6px 10px;border-radius:4px;font-size:12px;pointer-events:none;display:none;z-index:1000;font-family:sans-serif;`;
+                    container.appendChild(tooltip);
                 }
 
-                if (xData.showTooltip) {
-                    if (!tooltip) {
-                        tooltip = document.createElement('div');
-                        tooltip.id = 'scatterplotTooltip';
-                        tooltip.style.cssText = `position:absolute;background-color:rgba(0,0,0,0.8);color:white;padding:5px 10px;border-radius:4px;font-size:12px;pointer-events:none;z-index:1000;display:none;`;
-                        container.appendChild(tooltip);
-                    }
-                } else if (tooltip) {
-                    tooltip.remove();
-                    tooltip = null;
+                const cW = width - margin.left - margin.right; 
+                const cH = height - margin.top - margin.bottom;
+                canvas.width = cW; canvas.height = cH; 
+                canvas.style.width = cW+'px'; canvas.style.height = cH+'px'; 
+                canvas.style.top = margin.top+'px'; canvas.style.left = margin.left+'px';
+
+                if (!renderer) { const mod = await import('https://esm.sh/regl-scatterplot@1.14.1'); renderer = mod.createRenderer(); }
+
+                const intXScale = d3.scaleLinear().domain([-1,1]).range([0,cW]);
+                const intYScale = d3.scaleLinear().domain([-1,1]).range([cH,0]);
+
+                if (!plot) {
+                    const createScatterplot = (await import('https://esm.sh/regl-scatterplot@1.14.1')).default;
+                    plot = createScatterplot({ renderer, canvas, width: cW, height: cH, xScale: intXScale, yScale: intYScale, pointSize: xData.options.size, performanceMode: xData.performanceMode });
                 }
 
-                const canvasWidth = width - margin.left - margin.right;
-                const canvasHeight = height - margin.top - margin.bottom;
-                if (canvasWidth <= 0 || canvasHeight <= 0) return;
-                canvas.width = canvasWidth;
-                canvas.height = canvasHeight;
-                canvas.style.width = canvasWidth + 'px';
-                canvas.style.height = canvasHeight + 'px';
-                canvas.style.top = margin.top + 'px';
-                canvas.style.left = margin.left + 'px';
+                const newConf = { pointSize: xData.options.size, pointColor: xData.options.pointColor, opacity: xData.options.opacity };
+                newConf.colorBy = xData.options.colorBy ? xData.options.colorBy : null;
+                plot.set(newConf);
 
-                if (!renderer) {
-                    const module = await import('https://esm.sh/regl-scatterplot@1.14.1');
-                    const { default: createScatterplot, createRenderer } = module;
-                    renderer = createRenderer();
-                }
+                const points = new Array(n);
+                if (dataBuffers.z) { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i], dataBuffers.z[i]]; } 
+                else { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i]]; }
+                
+                await plot.draw(points);
+                loader.style.display = 'none';
 
-                const internalXScale = d3.scaleLinear().domain([-1, 1]).range([0, canvasWidth]);
-                const internalYScale = d3.scaleLinear().domain([-1, 1]).range([canvasHeight, 0]);
-
-                const isSpatialUpdate = plot && xData.points.length === prevNumPoints;
-
-                if (isSpatialUpdate) {
-                    const spatialIndex = plot.get('spatialIndex');
-                    const numPoints = xData.points.length;
-                    currentPoints = [];
-                    for (let i = 0; i < numPoints; i++) {
-                        const point = [xData.points[i][0], xData.points[i][1]];
-                        if (xData.points[i].length > 2) {
-                            point.push(xData.points[i][2]);
-                        }
-                        currentPoints.push(point);
-                    }
-
-                    const config = {
-                        pointSize: xData.options.size,
-                        pointColor: xData.options.pointColor,
-                        opacity: xData.options.opacity || 0.8
-                    };
-                    
-                    if (xData.options.colorBy) {
-                        config.colorBy = xData.options.colorBy;
-                    }
-
-                    plot.set(config);
-                    await plot.draw(currentPoints, { spatialIndex });
-                } else {
-                    if (plot) {
-                        plot.destroy?.();
-                        plot = null;
-                    }
-
-                    plot = (await import('https://esm.sh/regl-scatterplot@1.14.1')).default({
-                        renderer,
-                        canvas,
-                        width: canvasWidth,
-                        height: canvasHeight,
-                        xScale: internalXScale,
-                        yScale: internalYScale,
-                        pointSize: xData.options.size || 3,
-                        opacity: xData.options.opacity || 0.8,
-                    });
-
-                    const numPoints = xData.points.length || 0;
-                    currentPoints = [];
-                    for (let i = 0; i < numPoints; i++) {
-                        const point = [xData.points[i][0], xData.points[i][1]];
-                        if (xData.points[i].length > 2) {
-                            point.push(xData.points[i][2]);
-                        }
-                        currentPoints.push(point);
-                    }
-
-                    const config = {
-                        pointSize: xData.options.size,
-                        pointColor: xData.options.pointColor,
-                        opacity: xData.options.opacity || 0.8
-                    };
-                    
-                    if (xData.options.colorBy) {
-                        config.colorBy = xData.options.colorBy;
-                    }
-
-                    plot.set(config);
-                    await plot.draw(currentPoints);
-
-                    // 🔗 Apply synced camera BEFORE initial auto-zoom
-                    if (globalSyncEnabled && globalSyncPlotIds.length > 0 && globalSyncPlotIds.includes(plotId)) {
-                        // This plot is part of a sync group
-                        const firstPid = globalSyncPlotIds[0];
-                        const firstEntry = globalRegistry.get(firstPid);
-                        if (firstEntry && firstEntry.plot && plotId !== firstPid) {
-                            // Add to sync group BEFORE setting camera
-                            if (firstEntry.syncGroup) {
-                                firstEntry.syncGroup.add(plotId);
-                            }
-                            
-                            const mainCamera = firstEntry.plot.get('cameraView');
-                            if (mainCamera) {
-                                plot.set({ cameraView: mainCamera }, { preventEvent: true });
-                                isInitialRender = false; // Skip auto-zoom for synced plots
-                                console.log(`✓ Applied synced camera to ${plotId}`);
-                            }
-                        } else if (plotId === firstPid && isInitialRender) {
-                            // First plot in sync group - do auto-zoom
-                            autoAdjustZoom(xDomainOrig, yDomainOrig);
-                            isInitialRender = false;
-                            console.log(`✓ Auto-zoomed first synced plot ${plotId}`);
-                        }
-                    } else if (isInitialRender) {
-                        autoAdjustZoom(xDomainOrig, yDomainOrig);
-                        isInitialRender = false;
-                        console.log(`✓ Auto-zoomed independent plot ${plotId}`);
-                        
-                        // ✅ ADD THIS: Update axes after zoom completes
-                        requestAnimationFrame(() => {
-                            updateAxesFromCamera();
-                        });
-                    }
-                }
-
-                prevDomains = { x_min: xData.x_min, x_max: xData.x_max, y_min: xData.y_min, y_max: xData.y_max };
-                prevNumPoints = xData.points.length;
-
-                // Create axis update function - ALWAYS available for sync
                 const updateAxesFromCamera = function() {
-                    if (!hasAxes || !plot || !xScale || !yScale) return;
-                    
-                    const event = { xScale: plot.get('xScale'), yScale: plot.get('yScale') };
-                    
-                    // ✅ Get the VISIBLE normalized range from the camera
-                    const visibleNormX = event.xScale.domain(); // e.g., [-0.5, 0.3]
-                    const visibleNormY = event.yScale.domain(); // e.g., [-0.2, 0.8]
-                    
-                    // ✅ Map the VISIBLE normalized range to the ORIGINAL data range
-                    // Formula: origValue = origMin + (normValue + 1) / 2 * (origMax - origMin)
-                    const newXDomain = [
-                        xDomainOrig[0] + (visibleNormX[0] + 1) / 2 * (xDomainOrig[1] - xDomainOrig[0]),
-                        xDomainOrig[0] + (visibleNormX[1] + 1) / 2 * (xDomainOrig[1] - xDomainOrig[0])
-                    ];
-                    const newYDomain = [
-                        yDomainOrig[0] + (visibleNormY[0] + 1) / 2 * (yDomainOrig[1] - yDomainOrig[0]),
-                        yDomainOrig[0] + (visibleNormY[1] + 1) / 2 * (yDomainOrig[1] - yDomainOrig[0])
-                    ];
-
-                    // ✅ Update D3 scales to show ONLY the visible portion
-                    xScale.domain(newXDomain);
-                    yScale.domain(newYDomain);
-                    
-                    // Update axes
-                    xAxis.scale(xScale);
-                    yAxis.scale(yScale);
-                    xAxisG.call(xAxis);
-                    yAxisG.call(yAxis);
+                    if (!xData.showAxes || !plot || !xScale || !yScale) return;
+                    const evt = { xScale: plot.get('xScale'), yScale: plot.get('yScale') };
+                    if (!evt.xScale || !evt.yScale) return;
+                    const vnX = evt.xScale.domain(); const vnY = evt.yScale.domain();
+                    const nX = [xDomainOrig[0] + (vnX[0]+1)/2 * (xDomainOrig[1]-xDomainOrig[0]), xDomainOrig[0] + (vnX[1]+1)/2 * (xDomainOrig[1]-xDomainOrig[0])];
+                    const nY = [yDomainOrig[0] + (vnY[0]+1)/2 * (yDomainOrig[1]-yDomainOrig[0]), yDomainOrig[0] + (vnY[1]+1)/2 * (yDomainOrig[1]-yDomainOrig[0])];
+                    xScale.domain(nX); yScale.domain(nY);
+                    updateAxes();
                 };
 
-                if (plot) {
-                    // ALWAYS subscribe to view - not just when syncing!
-                    plot.subscribe('view', (event) => {
-                        if (!isSyncing) {
-                            // Apply constraints first
-                            // constrainCamera();
-                            
-                            // Update local axes
-                            updateAxesFromCamera();
-                            
-                            // Then sync if in a sync group
-                            const entry = globalRegistry.get(plotId);
-                            if (entry && entry.syncGroup && entry.syncGroup.size > 0) {
-                                syncCameraAcrossPlots(plotId);
+                // [CRITICAL FIX] Aggressive Sync Logic from Second Code
+                const applyMasterView = function() {
+                    const masterEntry = globalRegistry.get('p1');
+                    if (masterEntry && masterEntry.plot && plotId !== 'p1') {
+                        try {
+                            const masterCam = cloneCamera(masterEntry.plot.get('cameraView'));
+                            if (masterCam) {
+                                plot.set({ cameraView: masterCam }, { preventEvent: true });
+                                if (d3Available) updateAxesFromCamera();
+                                return true;
                             }
-                        }
-                    });
+                        } catch(e) { console.error("Sync failed:", e); }
+                    }
+                    return false;
+                };
 
-                    plot.subscribe('select', ({ points: selectedIndices }) => {
-                        if (!isSyncing) {
-                            console.log('✓ Selection event fired, plotId:', plotId);
-                            console.log('✓ Selected indices:', Array.from(selectedIndices));
-                            
-                            // 📤 Send selected indices back to Shiny using the OUTPUT ID
-                            if (window.Shiny && window.Shiny.setInputValue) {
-                                const inputName = plotId + '_selected';
-                                console.log('📤 Setting input:', inputName);
-                                
-                                window.Shiny.setInputValue(inputName, {
-                                    indices: Array.from(selectedIndices),
-                                    count: selectedIndices.length,
-                                    timestamp: Date.now()
-                                });
-                                
-                                console.log(`✓ Plot ${plotId}: ${selectedIndices.length} points selected, sent to Shiny`);
-                            } else {
-                                console.warn('⚠️ Shiny not available or setInputValue not found');
-                            }
-                            
-                            // Sync across plots
-                            const entry = globalRegistry.get(plotId);
-                            if (entry && entry.syncGroup && entry.syncGroup.size > 0) {
-                                isSyncing = true;
-                                entry.syncGroup.forEach(pid => {
-                                    if (pid !== plotId) {
-                                        const e = globalRegistry.get(pid);
-                                        if (e && e.plot) {
-                                            e.plot.select(selectedIndices, { preventEvent: true });
-                                        }
-                                    }
-                                });
-                                isSyncing = false;
-                            }
-                        }
-                    });
+                const autoAdjustZoom = function() {
+                    // Try to sync with P1 first to prevent deformation
+                    if (globalRegistry.globalSyncEnabled) {
+                        const synced = applyMasterView();
+                        if (synced) return; 
+                    }
 
-                    // ALSO add this for deselect:
-                    plot.subscribe('deselect', () => {
-                        if (!isSyncing) {
-                            console.log('✓ Deselect event fired, plotId:', plotId);
-                            
-                            if (window.Shiny && window.Shiny.setInputValue) {
-                                const inputName = plotId + '_selected';
-                                window.Shiny.setInputValue(inputName, {
-                                    indices: [],
-                                    count: 0,
-                                    timestamp: Date.now()
-                                });
-                                
-                                console.log(`✓ Plot ${plotId}: deselected, sent to Shiny`);
-                            }
-                            
-                            // Sync deselection
-                            const entry = globalRegistry.get(plotId);
-                            if (entry && entry.syncGroup && entry.syncGroup.size > 0) {
-                                isSyncing = true;
-                                entry.syncGroup.forEach(pid => {
-                                    if (pid !== plotId) {
-                                        const e = globalRegistry.get(pid);
-                                        if (e && e.plot) {
-                                            e.plot.deselect({ preventEvent: true });
-                                        }
-                                    }
-                                });
-                                isSyncing = false;
-                            }
-                        }
-                    });
-
+                    // Fallback to aspect ratio calc
+                    const rect = container.getBoundingClientRect();
+                    const currW = rect.width - margin.left - margin.right;
+                    const currH = rect.height - margin.top - margin.bottom;
+                    if (currW <= 0 || currH <= 0) return;
+                    const xr = xDomainOrig[1] - xDomainOrig[0]; 
+                    const yr = yDomainOrig[1] - yDomainOrig[0];
+                    const sAsp = xr / yr; 
+                    const cAsp = currW / currH;
+                    let zX, zY, zW, zH;
+                    if (sAsp > cAsp) { zW = 2; zH = 2 * (sAsp / cAsp); zX = -1; zY = -zH / 2; } 
+                    else { zH = 2; zW = 2 * (cAsp / sAsp); zX = -zW / 2; zY = -1; }
                     
-                    if (xData.showTooltip && tooltip) {
-                        plot.subscribe('pointOver', (pointIndex) => {
-                            const normPoint = plot.get('points')[pointIndex];
-                            const [nx, ny] = normPoint.slice(0, 2);
-                            const origX = xDomainOrig[0] + (nx + 1) / 2 * (xDomainOrig[1] - xDomainOrig[0]);
-                            const origY = yDomainOrig[0] + (ny + 1) / 2 * (yDomainOrig[1] - yDomainOrig[0]);
-                            const [px, py] = plot.getScreenPosition(pointIndex);
-                            
-                            let tooltipContent = '';
-                            
-                            // ✅ SHOW GENE NAME FIRST IF AVAILABLE
-                            if (xData.gene_names && xData.gene_names[pointIndex]) {
-                                tooltipContent += `<strong style="color: #E74C3C; font-size: 1.1em;">${xData.gene_names[pointIndex]}</strong><br>`;
-                            }
-                            
-                            tooltipContent += `X: ${origX.toFixed(2)}<br>Y: ${origY.toFixed(2)}`;
-                            
-                            if (normPoint.length > 2 && xData.legend) {
-                                const z = normPoint[2];
-                                let colorVal;
-                                
-                                if (xData.legend.var_type === 'categorical') {
-                                    const colorIndex = Math.floor(z);
-                                    colorVal = xData.legend.names && xData.legend.names[colorIndex] 
-                                        ? xData.legend.names[colorIndex] 
-                                        : z.toFixed(2);
-                                } else if (xData.legend.var_type === 'continuous') {
-                                    colorVal = xData.legend.minVal + z * (xData.legend.maxVal - xData.legend.minVal);
-                                    colorVal = colorVal.toFixed(2);
-                                } else {
-                                    colorVal = z.toFixed(2);
+                    if (plot) { 
+                        plot.zoomToArea({ x: zX, y: zY, width: zW, height: zH }, true);
+                        requestAnimationFrame(updateAxesFromCamera); 
+                    }
+                };
+                
+                let lastWidth = el.offsetWidth;
+                let lastHeight = el.offsetHeight;
+
+                if (!resizeObserver) {
+                    resizeObserver = new ResizeObserver((entries) => {
+                        const width = el.offsetWidth;
+                        const height = el.offsetHeight;
+                        if (width === lastWidth && height === lastHeight) return;
+                        lastWidth = width;
+                        lastHeight = height;
+
+                        if (window.requestIdleCallback) {
+                            window.requestIdleCallback(() => {
+                                if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+                                     // Attempt master sync on resize
+                                     if(globalRegistry.globalSyncEnabled) applyMasterView();
+                                     else autoAdjustZoom();
                                 }
-                                
-                                tooltipContent += `<br>Value: ${colorVal}`;
-                            }
-                            
-                            tooltip.innerHTML = tooltipContent;
-                            tooltip.style.display = 'block';
-                            tooltip.style.left = (px + margin.left + 10) + 'px';
-                            tooltip.style.top = (py + margin.top + 10) + 'px';
-                        });
-
-                        plot.subscribe('pointOut', () => {
-                            tooltip.style.display = 'none';
-                        });
-                    }
-                }
-                
-                if (Object.keys(xData.legend).length > 0) {
-                    createLegend(container, xData.legend);
-                }
-                
-                if (xData.enableDownload && !container.querySelector('.download-btn-container')) {
-                    createDownloadButton(container);
-                }
-                
-                // Register in global registry
-                const entry = globalRegistry.get(plotId) || {};
-                
-                // Get sync group - inherit from first synced plot if available
-                let syncGroup = entry.syncGroup;
-                if (!syncGroup && globalSyncEnabled && globalSyncPlotIds.length > 0) {
-                    const firstPid = globalSyncPlotIds[0];
-                    const firstEntry = globalRegistry.get(firstPid);
-                    if (firstEntry && firstEntry.syncGroup) {
-                        syncGroup = firstEntry.syncGroup;
-                    }
-                }
-                
-                globalRegistry.set(plotId, {
-                  plotId,
-                  plot,
-                  points: currentPoints,
-                  width: canvasWidth,
-                  height: canvasHeight,
-                  syncGroup: syncGroup,
-                  updateAxesFromCamera
-                });
-                
-                console.log(`✓ Registered plot ${plotId}`);
-            },
-
-            resize: function(newWidth, newHeight) {
-                width = newWidth;
-                height = newHeight;
-                if (plot && currentXData && currentPoints && d3Available) {
-                    const canvasWidth = width - margin.left - margin.right;
-                    const canvasHeight = height - margin.top - margin.bottom;
-                    if (canvasWidth > 0 && canvasHeight > 0) {
-                        canvas.width = canvasWidth;
-                        canvas.height = canvasHeight;
-                        canvas.style.width = canvasWidth + 'px';
-                        canvas.style.height = canvasHeight + 'px';
-                        canvas.style.top = margin.top + 'px';
-                        canvas.style.left = margin.left + 'px';
-                        if (svg && currentXData.showAxes) {
-                            svg.attr('width', width).attr('height', height);
-                            xScale.range([margin.left, width - margin.right]);
-                            yScale.range([height - margin.bottom, margin.top]);
-                            const internalXScale = d3.scaleLinear().domain([-1, 1]).range([0, canvasWidth]);
-                            const internalYScale = d3.scaleLinear().domain([-1, 1]).range([canvasHeight, 0]);
-                            plot.set({ 
-                                xScale: internalXScale, 
-                                yScale: internalYScale, 
-                                width: canvasWidth, 
-                                height: canvasHeight 
                             });
-                            svg.select('.x-label')
-                                .attr('x', margin.left + (width - margin.left - margin.right) / 2);
-                            svg.select('.y-label')
-                                .attr('x', -(margin.top + (height - margin.top - margin.bottom) / 2))
-                                .attr('y', 15);
-                            updateAxes();
+                        } else {
+                            setTimeout(() => {
+                                if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+                                     if(globalRegistry.globalSyncEnabled) applyMasterView();
+                                     else autoAdjustZoom();
+                                }
+                            }, 100);
                         }
-                        plot.draw(currentPoints);
+                    });
+                    resizeObserver.observe(container);
+                }
+
+                if (isInitialRender) { autoAdjustZoom(); }
+
+                const entry = globalRegistry.get(plotId) || {};
+                let syncGroup = entry.syncGroup;
+                if (!syncGroup && globalRegistry.globalSyncEnabled && globalRegistry.globalSyncPlotIds.length>0) {
+                    const first = globalRegistry.get(globalRegistry.globalSyncPlotIds[0]);
+                    if(first && first.syncGroup) syncGroup = first.syncGroup;
+                }
+
+                globalRegistry.set(plotId, { 
+                    plotId, 
+                    plot, 
+                    canvas, 
+                    updateAxesFromCamera, 
+                    syncGroup,
+                    
+                    xData: dataBuffers.x,
+                    yData: dataBuffers.y,
+                    zData: dataBuffers.z,
+                    filterData: filterBuffers, 
+                    categoryData: catData, 
+                    
+                    options: xData.options,
+                    legend: xData.legend,
+                    
+                    n_points: n,
+                    
+                    updateLegendUI: updateLegendUI,
+                    createLegend: createLegend,
+                    isInitializing: true // [FIX] Added flag
+                });
+
+                // Clear initialization flag to allow broadcasting
+                setTimeout(() => { 
+                    const e = globalRegistry.get(plotId);
+                    if(e) e.isInitializing = false; 
+                }, 800);
+
+                if (globalRegistry.globalSyncEnabled) {
+                    if (!Array.isArray(globalRegistry.globalSyncPlotIds)) globalRegistry.globalSyncPlotIds = [];
+                    if (!globalRegistry.globalSyncPlotIds.includes(plotId)) globalRegistry.globalSyncPlotIds.push(plotId);
+                    const group = new Set(globalRegistry.globalSyncPlotIds);
+                    globalRegistry.globalSyncPlotIds.forEach(pid => { const e = globalRegistry.get(pid); if (e) e.syncGroup = group; });
+                }
+                
+                updateLegendUI(); 
+                recalcAndApplyFilters(globalRegistry.get(plotId));
+
+                const unsubView = plot.subscribe('view', () => { 
+                    updateAxesFromCamera(); 
+                    if(!globalRegistry.globalSyncEnabled) return; 
+                    
+                    // [FIX] Do not broadcast if initializing
+                    if (globalRegistry.get(plotId).isInitializing) return;
+
+                    if (globalRegistry.syncLeader && globalRegistry.syncLeader !== plotId) return;
+                    globalRegistry.syncLeader = plotId;
+                    if (globalRegistry.leaderTimeout) clearTimeout(globalRegistry.leaderTimeout);
+                    if(!globalRegistry.isSyncing) { 
+                        syncCameraAcrossPlots(plotId); 
+                    } 
+                    globalRegistry.leaderTimeout = setTimeout(() => { globalRegistry.syncLeader = null; }, 50);
+                });
+                window.__spUnsubscribers[plotId].push(unsubView);
+                
+                const unsubSelect = plot.subscribe('select', ({ points: sel }) => { 
+                    if (!globalRegistry.globalSyncEnabled) return;
+                    if (!globalRegistry.isSyncing) { 
+                        try {
+                            globalRegistry.isSyncing = true;
+                            if (window.Shiny && window.Shiny.setInputValue) { window.Shiny.setInputValue(plotId+'_selected', { indices: Array.from(sel), count: sel.length }); } 
+                            
+                            // [FIX] Use global registry logic to ensure we hit everyone
+                            globalRegistry.forEach((e, pid) => {
+                                if (pid !== plotId && e.plot && e.canvas.isConnected) {
+                                    e.plot.select(sel, { preventEvent: true });
+                                }
+                            });
+                        } finally {
+                            globalRegistry.isSyncing = false; 
+                        }
+                    } 
+                });
+                window.__spUnsubscribers[plotId].push(unsubSelect);
+
+                const unsubDeselect = plot.subscribe('deselect', () => { 
+                    if (!globalRegistry.globalSyncEnabled) return;
+                    if(!globalRegistry.isSyncing) { 
+                        try {
+                            globalRegistry.isSyncing = true;
+                            if(window.Shiny) window.Shiny.setInputValue(plotId+'_selected', {indices:[], count:0}); 
+                             // [FIX] Use global registry logic
+                            globalRegistry.forEach((e, pid) => {
+                                if (pid !== plotId && e.plot && e.canvas.isConnected) {
+                                    e.plot.deselect({ preventEvent: true });
+                                }
+                            });
+                        } finally {
+                            globalRegistry.isSyncing = false;
+                        }
+                    } 
+                });
+                window.__spUnsubscribers[plotId].push(unsubDeselect);
+
+                if (xData.showTooltip && tooltip) {
+                    const unsubOver = plot.subscribe('pointOver', (i) => {
+                        const nx = dataBuffers.x[i]; const ny = dataBuffers.y[i];
+                        const ox = xDomainOrig[0] + (nx+1)/2 * (xDomainOrig[1]-xDomainOrig[0]);
+                        const oy = yDomainOrig[0] + (ny+1)/2 * (yDomainOrig[1]-yDomainOrig[0]);
+                        let txt = '';
+                        if(xData.gene_names[i]) txt += `<b>${xData.gene_names[i]}</b><br>`;
+                        txt += `X: ${ox.toFixed(2)}<br>Y: ${oy.toFixed(2)}`;
+                        if(dataBuffers.z && xData.legend) {
+                            const z = dataBuffers.z[i]; let val = z.toFixed(2);
+                            if(xData.legend.var_type==='categorical') { const idx = Math.floor(z); if(xData.legend.names[idx]) val = xData.legend.names[idx]; } else if(xData.legend.var_type==='continuous') { val = (xData.legend.minVal + z * (xData.legend.maxVal-xData.legend.minVal)).toFixed(2); }
+                            txt += `<br>Value: ${val}`;
+                        }
+                        const [px,py] = plot.getScreenPosition(i);
+                        tooltip.innerHTML = txt; tooltip.style.display = 'block'; tooltip.style.left = (px+margin.left+10)+'px'; tooltip.style.top = (py+margin.top)+'px';
+                    });
+                    window.__spUnsubscribers[plotId].push(unsubOver);
+                    const unsubOut = plot.subscribe('pointOut', () => tooltip.style.display='none');
+                    window.__spUnsubscribers[plotId].push(unsubOut);
+                }
+
+                await createLegend(container, xData.legend);
+                if(xData.enableDownload) createDownloadButton(container);
+                prevNumPoints = n;
+                
+                updateLegendUI(); 
+                recalcAndApplyFilters(globalRegistry.get(plotId));
+            },
+            
+            resize: function(w, h) {
+                // 1. Force container to match new Shiny dimensions
+                container.style.width = w + 'px'; 
+                container.style.height = h + 'px';
+                
+                // 2. Get the ACTUAL calculated pixel size
+                const rect = container.getBoundingClientRect();
+                const newW = rect.width;
+                const newH = rect.height;
+
+                // 3. Update Canvas
+                if (canvas && plot) {
+                    canvas.width = newW;
+                    canvas.height = newH;
+                    canvas.style.width = newW + 'px';
+                    canvas.style.height = newH + 'px';
+                    
+                    plot.set({ 
+                        width: newW, 
+                        height: newH
+                    });
+                    
+                    const registryEntry = globalRegistry.get(plotId);
+                    
+                    // 4. Update D3 Ranges (Pixels)
+                    if (svg && registryEntry && registryEntry.options) { 
+                        svg.attr('width', newW).attr('height', newH);
+                        
+                        // Update the pixel ranges of the D3 scales
+                        if (xScale) xScale.range([margin.left, newW - margin.right]); 
+                        if (yScale) yScale.range([newH - margin.bottom, margin.top]);
+                        
+                        // Reposition Axis Groups
+                        if (xAxisG) xAxisG.attr('transform', `translate(0, ${newH - margin.bottom})`);
+                        
+                        // Reposition Labels
+                        if (svg.select('.x-label')) {
+                            svg.select('.x-label')
+                                .attr('x', margin.left + (newW - margin.left - margin.right)/2)
+                                .attr('y', newH - 10);
+                        }
+                        if (svg.select('.y-label')) {
+                            svg.select('.y-label')
+                                .attr('x', -(margin.top + (newH - margin.top - margin.bottom)/2))
+                                .attr('y', 15);
+                        }
                     }
+
+                    // 5. Update Axes based on current camera
+                    if (registryEntry && registryEntry.updateAxesFromCamera) {
+                        registryEntry.updateAxesFromCamera();
+                    }
+                    
+                    // 6. Force redraw
+                    plot.draw();
                 }
             }
         };

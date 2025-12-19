@@ -1,227 +1,174 @@
-#' Scalable scatterplot HTML widget with multi-sync support
-#'
-#' Create an interactive scalable scatterplot using the `regl-scatterplot` JavaScript library.
-#'
-#' @param x numeric vector of x coordinates
-#' @param y numeric vector of y coordinates
-#' @param colorBy factor/chr/numeric vector to color by
-#' @param data optional data.frame containing the data
-#' @param size point size (default 3)
-#' @param categorical_palette RColorBrewer palette name (default "Set1")
-#' @param continuous_palette viridisLite palette name (default "viridis")
-#' @param custom_palette named character vector of hex colors, e.g. c("Significant" = "#E74C3C", "Not Significant" = "#CCCCCC")
-#' @param xlab x-axis label
-#' @param ylab y-axis label
-#' @param showAxes logical; show axes (default TRUE)
-#' @param showTooltip logical; enable tooltips (default TRUE)
-#' @param pointColor uniform hex color (overrides colorBy)
-#' @param opacity point opacity 0-1 (default 0.8)
-#' @param backgroundColor hex color for background
-#' @param width canvas width in pixels
-#' @param height canvas height in pixels
-#' @param legend_title legend title
-#' @param enableDownload logical; show download button (default FALSE)
-#' @param plotId unique plot ID (for multi-sync)
-#' @param syncPlots vector of plot IDs to sync
-#' @param elementId container element ID
-#' @param gene_names optional vector of gene names for tooltips
-#' @param dataVersion Optional unique identifier to force full redraw (advanced)
+library(shiny)
+library(htmlwidgets)
+library(base64enc) 
+
+#' Scalable scatterplot HTML widget with binary transfer
 #' @export
-my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3, 
+`%||%` <- function(x, y) {
+  if (is.null(x)) y else x
+}
+
+#' @export
+to_base64 <- function(vec) {
+  if (is.null(vec)) return(NULL)
+  con <- rawConnection(raw(0), "r+")
+  writeBin(as.numeric(vec), con, size = 4)
+  raw_data <- rawConnectionValue(con)
+  close(con)
+  paste0("base64:", base64enc::base64encode(raw_data))
+}
+
+#' @export
+my_scatterplot <- function(data = NULL, x, y, 
+                           colorBy = NULL, 
+                           group_var = NULL,
+                           filter_vars = NULL, 
+                           size = NULL, 
                            categorical_palette = "Set1", continuous_palette = "viridis", 
                            custom_palette = NULL, gene_names = NULL,
                            xlab = "X", ylab = "Y", 
                            xrange = NULL, yrange = NULL,
                            showAxes = TRUE, showTooltip = TRUE, 
-                           pointColor = NULL, opacity = 0.8, backgroundColor = NULL, 
+                           pointColor = NULL, opacity = NULL, backgroundColor = NULL, 
                            width = NULL, height = NULL, legend_title = NULL, 
-                           enableDownload = FALSE, plotId = NULL, syncPlots = NULL,
+                           enableDownload = TRUE, plotId = NULL, syncPlots = NULL,
                            elementId = NULL,
-                           dataVersion = NULL) {   # ← ADD THIS PARAM
-  
+                           dataVersion = NULL) {
+
   if (!is.null(data)) {
-    x <- data[, x]
-    y <- data[, y]
-    if (!is.null(colorBy)) {
-      colorBy <- data[, colorBy]
-    }
-  }
-
-  if (!is.numeric(x) || !is.numeric(y)) {
-    stop("x and y coordinates must be numeric")
-  }
-
-  # ✅ COMPUTE ORIGINAL DOMAINS - use xrange/yrange if provided
-  if (!is.null(xrange)) {
-    x_min <- xrange[1]
-    x_max <- xrange[2]
+    x_vec <- data[, x]
+    y_vec <- data[, y]
+    if (!is.null(colorBy)) color_vec <- data[, colorBy] else color_vec <- NULL
   } else {
-    x_min <- min(x, na.rm = TRUE)
-    x_max <- max(x, na.rm = TRUE)
+    x_vec <- x
+    y_vec <- y
+    color_vec <- colorBy
   }
+
+  x_vec <- as.numeric(unname(x_vec))
+  y_vec <- as.numeric(unname(y_vec))
+  n_points <- length(x_vec)
   
-  if (!is.null(yrange)) {
-    y_min <- yrange[1]
-    y_max <- yrange[2]
+  # --- AUTO-PERFORMANCE MODE ---
+  performance_mode <- FALSE
+  if (n_points > 500000) {
+    message("🚀 High Data Volume (", n_points, "): Enabling 'performanceMode'")
+    performance_mode <- TRUE
+    if (is.null(size)) size <- 1 
+    if (!is.null(gene_names)) gene_names <- NULL 
+    if (is.null(opacity)) opacity <- 1.0 
   } else {
-    y_min <- min(y, na.rm = TRUE)
-    y_max <- max(y, na.rm = TRUE)
+    if (is.null(size)) size <- 3
+    if (is.null(opacity)) opacity <- 0.8
   }
+  
+  # NORMALIZE
+  if (!is.null(xrange)) { xmin <- xrange[1]; xmax <- xrange[2] } 
+  else { xmin <- min(x_vec, na.rm=TRUE); xmax <- max(x_vec, na.rm=TRUE) }
+  
+  if (!is.null(yrange)) { ymin <- yrange[1]; ymax <- yrange[2] } 
+  else { ymin <- min(y_vec, na.rm=TRUE); ymax <- max(y_vec, na.rm=TRUE) }
 
-  # ✅ NORMALIZE COORDINATES TO [-1, 1] using the SPECIFIED ranges
-  x_normalized <- -1 + 2 * (x - x_min) / (x_max - x_min)
-  y_normalized <- -1 + 2 * (y - y_min) / (y_max - y_min)
+  x_norm <- -1 + 2 * (x_vec - xmin) / (xmax - xmin)
+  y_norm <- -1 + 2 * (y_vec - ymin) / (ymax - ymin)
   
-  # ✅ CLAMP normalized values to [-1, 1] (in case capping wasn't perfect)
-  x_normalized <- pmax(-1, pmin(1, x_normalized))
-  y_normalized <- pmax(-1, pmin(1, y_normalized))
+  x_norm <- pmax(-1, pmin(1, x_norm))
+  y_norm <- pmax(-1, pmin(1, y_norm))
   
-  points <- data.frame(x = x_normalized, y = y_normalized)
-
-  options <- list(
-    size = size,
-    opacity = opacity
-  )
-  
+  z_norm <- NULL
+  options <- list(size = size, opacity = opacity)
   legend_data <- list()
   
+  # --- COLOR LOGIC ---
   if (!is.null(pointColor)) {
-    # Uniform color override
     options$pointColor <- pointColor
-  } else if (!is.null(colorBy)) {
-    if (is.character(colorBy) || is.factor(colorBy)) {
+    options$colorBy <- NULL 
+  } else if (!is.null(color_vec)) {
+    if (is.character(color_vec) || is.factor(color_vec)) {
       var_type <- "categorical"
-      levels <- levels(as.factor(colorBy))
+      levels <- levels(as.factor(color_vec))
       
-      cat("[my_scatterplot] Processing categorical colorBy\n")
-      cat("[my_scatterplot] Levels:", paste(levels, collapse = ", "), "\n")
-      
-      # Use custom_palette if provided
       if (!is.null(custom_palette)) {
-        cat("[my_scatterplot] custom_palette provided\n")
-        cat("[my_scatterplot] custom_palette names:", paste(names(custom_palette), collapse = ", "), "\n")
-        cat("[my_scatterplot] custom_palette values:", paste(custom_palette, collapse = ", "), "\n")
-        
-        if (!is.null(names(custom_palette))) {
-          # Build plot_colors by matching levels to named palette
-          plot_colors <- character(length(levels))
-          
-          for (i in seq_along(levels)) {
-            level_name <- levels[i]
-            if (level_name %in% names(custom_palette)) {
-              plot_colors[i] <- custom_palette[[level_name]]
-              cat("[my_scatterplot] Mapped", level_name, "to", plot_colors[i], "\n")
-            } else {
-              warning(paste("Level", level_name, "not found in custom_palette"))
-              plot_colors[i] <- custom_palette[1]
-            }
-          }
-        } else {
-          warning("custom_palette must be a named vector")
-          plot_colors <- as.character(custom_palette[1:length(levels)])
-        }
+         cols <- if (!is.null(names(custom_palette))) custom_palette[levels] else custom_palette[1:length(levels)]
       } else {
-        # Use RColorBrewer
-        cat("[my_scatterplot] Using RColorBrewer palette:", categorical_palette, "\n")
-        plot_colors <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
-        if (length(levels) > 11) {
-          plot_colors <- colorRampPalette(plot_colors)(length(levels))
-        }
+         cols <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
+         if (length(levels) > 11) cols <- colorRampPalette(cols)(length(levels))
       }
+      cols[is.na(cols)] <- "#808080"
       
-      cat("[my_scatterplot] Final plot_colors:", paste(plot_colors, collapse = ", "), "\n")
+      hex_cols <- sapply(cols, function(c) {
+        if (grepl("^#", c)) c else rgb(t(col2rgb(c)), maxColorValue=255)
+      })
       
-      # Convert to proper hex format
-      hex_colors <- character(length(plot_colors))
-      for (i in seq_along(plot_colors)) {
-        col <- plot_colors[i]
-        # Check if already hex
-        if (grepl("^#", col)) {
-          hex_colors[i] <- col
-        } else {
-          # Convert RGB/named color to hex
-          rgb_vals <- col2rgb(col)
-          hex_colors[i] <- rgb(rgb_vals[1], rgb_vals[2], rgb_vals[3], maxColorValue = 255)
-        }
-      }
+      z_norm <- as.integer(as.factor(color_vec)) - 1L
+      options$colorBy <- "valueA" 
+      options$pointColor <- as.vector(hex_cols)
+      legend_data <- list(names = levels, colors = as.vector(hex_cols), var_type = var_type, title = legend_title)
       
-      cat("[my_scatterplot] Final hex_colors:", paste(hex_colors, collapse = ", "), "\n")
-      
-      colorBy_numeric <- as.integer(as.factor(colorBy)) - 1L
-      points <- cbind(points, valueA = colorBy_numeric)
-
-      options$colorBy <- "valueA"
-      options$pointColor <- hex_colors
-      
-      legend_data$names <- levels
-      legend_data$colors <- hex_colors
-      legend_data$var_type <- var_type
-      legend_data$title <- legend_title
-      
-    } else if (is.numeric(colorBy)) {
+    } else if (is.numeric(color_vec)) {
       var_type <- "continuous"
+      rng <- range(color_vec, na.rm = TRUE)
+      z_norm <- (color_vec - rng[1]) / (rng[2] - rng[1])
       
-      colorBy_normalized <- (colorBy - min(colorBy, na.rm = TRUE)) / (max(colorBy, na.rm = TRUE) - min(colorBy, na.rm = TRUE))
-      points <- cbind(points, valueA = colorBy_normalized)
-      
-      palette_func <- switch(continuous_palette,
-                             viridis = viridisLite::viridis,
-                             magma = viridisLite::magma,
-                             plasma = viridisLite::plasma,
-                             inferno = viridisLite::inferno,
-                             viridisLite::viridis)
-      palette_colors <- palette_func(256)
-      palette_hex6 <- substr(palette_colors, 1, 7)
+      p_func <- switch(continuous_palette,
+                       viridis = viridisLite::viridis,
+                       magma = viridisLite::magma,
+                       plasma = viridisLite::plasma,
+                       inferno = viridisLite::inferno,
+                       viridisLite::viridis)
+      p_hex <- substr(p_func(256), 1, 7)
       
       options$colorBy <- "valueA"
-      options$pointColor <- palette_hex6
-      
-      legend_data$minVal <- min(colorBy, na.rm = TRUE)
-      legend_data$maxVal <- max(colorBy, na.rm = TRUE)
-      legend_data$midVal <- mean(colorBy, na.rm = TRUE)
-      legend_data$var_type <- var_type
-      legend_data$colors <- palette_hex6
-      legend_data$title <- legend_title %||% "Value"
-      
-    } else {
-      stop("colorBy must be numeric, character, or factor")
+      options$pointColor <- p_hex
+      legend_data <- list(minVal = rng[1], maxVal = rng[2], midVal = mean(color_vec, na.rm=TRUE), 
+                          var_type = var_type, colors = p_hex, title = legend_title %||% "Value")
     }
   } else {
     options$pointColor <- "#0072B2"
+    options$colorBy <- NULL
   }
 
-  # ✅ FIX: Ensure gene_names is properly formatted
-  gene_names_list <- NULL
-  if (!is.null(gene_names)) {
-    # Convert to character vector and ensure it's serializable
-    gene_names_list <- as.character(gene_names)
+  # --- SIDE DATA ENCODING ---
+  
+  # 1. Strainer Data (Continuous Filters)
+  filter_payload <- list()
+  if (!is.null(filter_vars) && is.data.frame(filter_vars)) {
+      for(col in names(filter_vars)) {
+          val <- as.numeric(filter_vars[[col]])
+          filter_payload[[col]] <- to_base64(val)
+      }
+  }
+  
+  # 2. Group Data (Categorical Filters from Legend)
+  group_payload <- NULL
+  if (!is.null(group_var)) {
+      # Convert to 0-based integer index for JS
+      g_vals <- as.integer(as.factor(group_var)) - 1L
+      group_payload <- to_base64(g_vals)
   }
 
   widget_spec <- list(
-    points = as.matrix(points),
+    x = to_base64(x_norm), 
+    y = to_base64(y_norm),
+    z = to_base64(z_norm),
+    filter_data = filter_payload, 
+    group_data = group_payload,
+    n_points = n_points,
     options = options,
     legend = legend_data,
-    x_min = x_min,      
-    x_max = x_max,
-    y_min = y_min,
-    y_max = y_max,
-    xlab = xlab,
-    ylab = ylab,
-    showAxes = showAxes,
-    showTooltip = showTooltip,
+    x_min = xmin, x_max = xmax,
+    y_min = ymin, y_max = ymax,
+    xlab = xlab, ylab = ylab,
+    showAxes = showAxes, showTooltip = showTooltip,
     backgroundColor = backgroundColor,
     enableDownload = enableDownload,
-    gene_names = gene_names_list,
-    plotId = plotId,
-    syncPlots = syncPlots,
-    dataVersion = dataVersion   # ← ADD THIS LINE
+    gene_names = if(!is.null(gene_names)) as.character(gene_names) else NULL,
+    plotId = plotId, syncPlots = syncPlots,
+    dataVersion = dataVersion,
+    performanceMode = performance_mode
   )
 
-  if (is.null(elementId) && !is.null(plotId)) {
-    elementId <- plotId
-  }
-  
-  widget <- htmlwidgets::createWidget(
+  htmlwidgets::createWidget(
     name = 'my_scatterplot',
     widget_spec,
     width = width,
@@ -229,13 +176,10 @@ my_scatterplot <- function(x, y, colorBy = NULL, data = NULL, size = 3,
     package = 'reglScatterplot',
     elementId = elementId
   )
-  
-  widget
 }
 
-# Shiny bindings
 #' @export
-my_scatterplotOutput <- function(outputId, width = '400px', height = '400px'){
+my_scatterplotOutput <- function(outputId, width = '100%', height = '600px'){
   htmlwidgets::shinyWidgetOutput(outputId, 'my_scatterplot', width, height, package = 'reglScatterplot')
 }
 
@@ -246,8 +190,14 @@ renderMy_scatterplot <- function(expr, env = parent.frame(), quoted = FALSE) {
 }
 
 #' @export
-enableMyScatterplotSync <- function(plotIds, session = shiny::getDefaultReactiveDomain()) {
-  session$sendCustomMessage("my_scatterplot_enableSync", list(plotIds = plotIds))
+enableMyScatterplotSync <- function(plotIds, enabled = TRUE, session = shiny::getDefaultReactiveDomain()) {
+  session$sendCustomMessage("my_scatterplot_sync", list(plotIds = plotIds, enabled = enabled))
 }
 
-NULL
+#' @export
+updateMyScatterplotSize <- function(plotIds, size, session = shiny::getDefaultReactiveDomain()) {
+  # Handle both single string or vector of IDs
+  for(id in plotIds) {
+    session$sendCustomMessage("update_point_size", list(plotId = id, size = size))
+  }
+}
