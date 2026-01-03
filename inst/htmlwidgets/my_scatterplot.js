@@ -99,7 +99,10 @@ function syncCameraAcrossPlots(sourcePlotId) {
       
       // Use the global list to ensure we hit everyone
       globalRegistry.forEach((entry, targetId) => {
-        if (targetId !== sourcePlotId && entry.plot && !entry.plot._destroyed && entry.canvas.isConnected) {
+        // [FIX] Check entry?.canvas exists before accessing isConnected
+        if (targetId !== sourcePlotId && 
+            entry?.plot && !entry.plot._destroyed && 
+            entry?.canvas && entry.canvas.isConnected) {
             // [FIX] Check initialization flag to prevent race conditions
             if (!entry.isInitializing) {
                 try {
@@ -119,7 +122,7 @@ function syncCameraAcrossPlots(sourcePlotId) {
 
 if (typeof Shiny !== 'undefined') {
 
-  // [NEW] Fast Point Size Update Handler
+  // Fast Point Size Update Handler
   Shiny.addCustomMessageHandler('update_point_size', function(msg) {
       const entry = globalRegistry.get(msg.plotId);
       if (entry && entry.plot) {
@@ -189,7 +192,8 @@ if (typeof Shiny !== 'undefined') {
     if (msg.enabled) {
         const activeIds = Array.from(globalRegistry.keys()).filter(id => {
             const e = globalRegistry.get(id);
-            return e && e.plot && !e.plot._destroyed && e.canvas.isConnected;
+            // [FIX] Check e?.canvas exists before accessing isConnected
+            return e && e.plot && !e.plot._destroyed && e?.canvas && e.canvas.isConnected;
         });
         globalRegistry.globalSyncPlotIds = activeIds;
         const syncGroup = new Set(activeIds);
@@ -221,7 +225,8 @@ if (typeof Shiny !== 'undefined') {
     if (!msg || !msg.indices) return;
     const indices = Array.isArray(msg.indices) ? msg.indices : [msg.indices];
     globalRegistry.forEach((entry) => {
-      if (entry.plot && entry.canvas.isConnected) {
+      // [FIX] Check entry?.canvas exists before accessing isConnected
+      if (entry.plot && entry?.canvas && entry.canvas.isConnected) {
           entry.plot.select(indices, { preventEvent: true });
       }
     });
@@ -229,7 +234,8 @@ if (typeof Shiny !== 'undefined') {
   
   Shiny.addCustomMessageHandler('clear_plot_selection', function(msg) {
     globalRegistry.forEach((entry) => {
-      if (entry.plot && entry.canvas.isConnected) {
+      // [FIX] Check entry?.canvas exists before accessing isConnected
+      if (entry.plot && entry?.canvas && entry.canvas.isConnected) {
           entry.plot.deselect({ preventEvent: true });
       }
     });
@@ -283,6 +289,19 @@ HTMLWidgets.widget({
         canvas.style.top = margin.top + 'px'; 
         canvas.style.left = margin.left + 'px';
         container.appendChild(canvas);
+
+        // [FIX] Add WebGL context lost/restored listeners
+        canvas.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            console.warn('[SP] webglcontextlost', plotId);
+        }, false);
+
+        canvas.addEventListener('webglcontextrestored', () => {
+            console.warn('[SP] webglcontextrestored', plotId);
+            // Strategy: destroy and recreate plot on next render/resize
+            try { plot?.destroy(); } catch(e) {}
+            plot = null;
+        }, false);
 
         let plot, renderer, svg, xAxisG, yAxisG, xAxis, yAxis, xScale, yScale;
         let xDomainOrig, yDomainOrig, tooltip;
@@ -751,15 +770,22 @@ HTMLWidgets.widget({
 
                 xDomainOrig = [xData.x_min, xData.x_max]; yDomainOrig = [xData.y_min, xData.y_max];
 
+                // [FIX] Use ACTUAL DOM size, not factory width/height which may be stale
+                const rect0 = container.getBoundingClientRect();
+                const fullW0 = Math.floor(rect0.width);
+                const fullH0 = Math.floor(rect0.height);
+                const cW = Math.max(0, fullW0 - margin.left - margin.right);
+                const cH = Math.max(0, fullH0 - margin.top - margin.bottom);
+
                 if (d3Available && xData.showAxes) {
                     if (svg) svg.remove();
-                    svg = d3.select(container).append('svg').attr('width', width).attr('height', height).style('position', 'absolute').style('top', 0).style('left', 0).style('pointer-events', 'none');
-                    xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', `translate(0, ${height - margin.bottom})`);
+                    svg = d3.select(container).append('svg').attr('width', fullW0).attr('height', fullH0).style('position', 'absolute').style('top', 0).style('left', 0).style('pointer-events', 'none');
+                    xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', `translate(0, ${fullH0 - margin.bottom})`);
                     yAxisG = svg.append('g').attr('class', 'y-axis').attr('transform', `translate(${margin.left}, 0)`);
-                    svg.append('text').attr('class','x-label').attr('x', margin.left+(width-margin.left-margin.right)/2).attr('y',height-10).text(xData.xlab||'X').attr('text-anchor','middle').style('font-family','sans-serif').style('font-size','12px');
-                    svg.append('text').attr('class','y-label').attr('transform','rotate(-90)').attr('x', -(margin.top+(height-margin.top-margin.bottom)/2)).attr('y',15).text(xData.ylab||'Y').attr('text-anchor','middle').style('font-family','sans-serif').style('font-size','12px');
-                    xScale = d3.scaleLinear().domain(xDomainOrig).range([margin.left, width - margin.right]);
-                    yScale = d3.scaleLinear().domain(yDomainOrig).range([height - margin.bottom, margin.top]);
+                    svg.append('text').attr('class','x-label').attr('x', margin.left+(fullW0-margin.left-margin.right)/2).attr('y',fullH0-10).text(xData.xlab||'X').attr('text-anchor','middle').style('font-family','sans-serif').style('font-size','12px');
+                    svg.append('text').attr('class','y-label').attr('transform','rotate(-90)').attr('x', -(margin.top+(fullH0-margin.top-margin.bottom)/2)).attr('y',15).text(xData.ylab||'Y').attr('text-anchor','middle').style('font-family','sans-serif').style('font-size','12px');
+                    xScale = d3.scaleLinear().domain(xDomainOrig).range([margin.left, fullW0 - margin.right]);
+                    yScale = d3.scaleLinear().domain(yDomainOrig).range([fullH0 - margin.bottom, margin.top]);
                     xAxis = d3.axisBottom(xScale).ticks(6); yAxis = d3.axisLeft(yScale).ticks(6);
                     xAxisG.call(xAxis); yAxisG.call(yAxis);
                 } else if (svg) { svg.remove(); svg=null; }
@@ -769,8 +795,7 @@ HTMLWidgets.widget({
                     container.appendChild(tooltip);
                 }
 
-                const cW = width - margin.left - margin.right; 
-                const cH = height - margin.top - margin.bottom;
+                // Canvas uses cW/cH (without margins)
                 canvas.width = cW; canvas.height = cH; 
                 canvas.style.width = cW+'px'; canvas.style.height = cH+'px'; 
                 canvas.style.top = margin.top+'px'; canvas.style.left = margin.left+'px';
@@ -852,32 +877,84 @@ HTMLWidgets.widget({
                 let lastWidth = el.offsetWidth;
                 let lastHeight = el.offsetHeight;
 
-                if (!resizeObserver) {
-                    resizeObserver = new ResizeObserver((entries) => {
-                        const width = el.offsetWidth;
-                        const height = el.offsetHeight;
-                        if (width === lastWidth && height === lastHeight) return;
-                        lastWidth = width;
-                        lastHeight = height;
+                // [FIX] Unified resize handler - uses el for consistency
+                const handleResize = function() {
+                    // Use el.getBoundingClientRect() for consistency (same element we observe)
+                    const rect = el.getBoundingClientRect();
+                    const fullW = Math.floor(rect.width);
+                    const fullH = Math.floor(rect.height);
+                    const cW = Math.max(0, fullW - margin.left - margin.right);
+                    const cH = Math.max(0, fullH - margin.top - margin.bottom);
 
-                        if (window.requestIdleCallback) {
-                            window.requestIdleCallback(() => {
-                                if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-                                     // Attempt master sync on resize
-                                     if(globalRegistry.globalSyncEnabled) applyMasterView();
-                                     else autoAdjustZoom();
-                                }
-                            });
-                        } else {
-                            setTimeout(() => {
-                                if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-                                     if(globalRegistry.globalSyncEnabled) applyMasterView();
-                                     else autoAdjustZoom();
-                                }
-                            }, 100);
-                        }
+                    // Never set dimensions to 0
+                    if (!plot || !canvas || cW === 0 || cH === 0) return;
+
+                    // 1. Update canvas = internal area (without margins)
+                    canvas.width = cW;
+                    canvas.height = cH;
+                    canvas.style.width = cW + 'px';
+                    canvas.style.height = cH + 'px';
+                    canvas.style.left = margin.left + 'px';
+                    canvas.style.top = margin.top + 'px';
+
+                    // 2. Update plot dimensions
+                    plot.set({ width: cW, height: cH });
+
+                    // 3. Update SVG/axes = full container size
+                    if (svg) {
+                        svg.attr('width', fullW).attr('height', fullH);
+                        if (xScale) xScale.range([margin.left, fullW - margin.right]);
+                        if (yScale) yScale.range([fullH - margin.bottom, margin.top]);
+                        if (xAxisG) xAxisG.attr('transform', `translate(0, ${fullH - margin.bottom})`);
+                        svg.select('.x-label')
+                            .attr('x', margin.left + (fullW - margin.left - margin.right)/2)
+                            .attr('y', fullH - 10);
+                        svg.select('.y-label')
+                            .attr('x', -(margin.top + (fullH - margin.top - margin.bottom)/2))
+                            .attr('y', 15);
+                    }
+
+                    // 5. Update axes from camera
+                    updateAxesFromCamera();
+                    
+                    // 6. Force redraw
+                    requestAnimationFrame(() => { 
+                        try { plot.draw(); } catch(e) {} 
                     });
-                    resizeObserver.observe(container);
+                };
+
+                if (!resizeObserver) {
+                    let resizeTimeout = null;
+                    
+                    resizeObserver = new ResizeObserver((entries) => {
+                        // [FIX] Use el consistently (same element we observe)
+                        const rect = el.getBoundingClientRect();
+                        const newWidth = Math.floor(rect.width);
+                        const newHeight = Math.floor(rect.height);
+                        
+                        if (newWidth === lastWidth && newHeight === lastHeight) return;
+                        lastWidth = newWidth;
+                        lastHeight = newHeight;
+
+                        // Skip if dimensions are 0 (panel minimized/hidden)
+                        if (newWidth <= 0 || newHeight <= 0) return;
+
+                        // Debounce resize
+                        if (resizeTimeout) clearTimeout(resizeTimeout);
+                        resizeTimeout = setTimeout(() => {
+                            const checkRect = el.getBoundingClientRect();
+                            if (checkRect.width > 0 && checkRect.height > 0) {
+                                // [FIX] Order: FIRST resize, THEN sync/zoom
+                                handleResize();
+                                // Sync after resize if enabled
+                                if (globalRegistry.globalSyncEnabled) {
+                                    applyMasterView();
+                                }
+                            }
+                        }, 100);
+                    });
+                    // [FIX] Observe el, not container, for consistency
+                    resizeObserver.observe(el);
                 }
 
                 if (isInitialRender) { autoAdjustZoom(); }
@@ -909,7 +986,7 @@ HTMLWidgets.widget({
                     
                     updateLegendUI: updateLegendUI,
                     createLegend: createLegend,
-                    isInitializing: true // [FIX] Added flag
+                    isInitializing: true
                 });
 
                 // Clear initialization flag to allow broadcasting
@@ -952,9 +1029,9 @@ HTMLWidgets.widget({
                             globalRegistry.isSyncing = true;
                             if (window.Shiny && window.Shiny.setInputValue) { window.Shiny.setInputValue(plotId+'_selected', { indices: Array.from(sel), count: sel.length }); } 
                             
-                            // [FIX] Use global registry logic to ensure we hit everyone
+                            // [FIX] Use global registry logic and check entry?.canvas exists
                             globalRegistry.forEach((e, pid) => {
-                                if (pid !== plotId && e.plot && e.canvas.isConnected) {
+                                if (pid !== plotId && e.plot && e?.canvas && e.canvas.isConnected) {
                                     e.plot.select(sel, { preventEvent: true });
                                 }
                             });
@@ -971,9 +1048,9 @@ HTMLWidgets.widget({
                         try {
                             globalRegistry.isSyncing = true;
                             if(window.Shiny) window.Shiny.setInputValue(plotId+'_selected', {indices:[], count:0}); 
-                             // [FIX] Use global registry logic
+                             // [FIX] Use global registry logic and check entry?.canvas exists
                             globalRegistry.forEach((e, pid) => {
-                                if (pid !== plotId && e.plot && e.canvas.isConnected) {
+                                if (pid !== plotId && e.plot && e?.canvas && e.canvas.isConnected) {
                                     e.plot.deselect({ preventEvent: true });
                                 }
                             });
@@ -1014,61 +1091,49 @@ HTMLWidgets.widget({
             },
             
             resize: function(w, h) {
-                // 1. Force container to match new Shiny dimensions
-                container.style.width = w + 'px'; 
-                container.style.height = h + 'px';
+                // [FIX] Do NOT force container.style.width/height - let CSS/layout handle it
+                // This can fight with reactive layouts and cause issues
                 
-                // 2. Get the ACTUAL calculated pixel size
-                const rect = container.getBoundingClientRect();
-                const newW = rect.width;
-                const newH = rect.height;
+                // Get actual DOM dimensions
+                const rect = el.getBoundingClientRect();
+                const fullW = Math.floor(rect.width);
+                const fullH = Math.floor(rect.height);
+                const cW = Math.max(0, fullW - margin.left - margin.right);
+                const cH = Math.max(0, fullH - margin.top - margin.bottom);
 
-                // 3. Update Canvas
-                if (canvas && plot) {
-                    canvas.width = newW;
-                    canvas.height = newH;
-                    canvas.style.width = newW + 'px';
-                    canvas.style.height = newH + 'px';
-                    
-                    plot.set({ 
-                        width: newW, 
-                        height: newH
-                    });
-                    
-                    const registryEntry = globalRegistry.get(plotId);
-                    
-                    // 4. Update D3 Ranges (Pixels)
-                    if (svg && registryEntry && registryEntry.options) { 
-                        svg.attr('width', newW).attr('height', newH);
-                        
-                        // Update the pixel ranges of the D3 scales
-                        if (xScale) xScale.range([margin.left, newW - margin.right]); 
-                        if (yScale) yScale.range([newH - margin.bottom, margin.top]);
-                        
-                        // Reposition Axis Groups
-                        if (xAxisG) xAxisG.attr('transform', `translate(0, ${newH - margin.bottom})`);
-                        
-                        // Reposition Labels
-                        if (svg.select('.x-label')) {
-                            svg.select('.x-label')
-                                .attr('x', margin.left + (newW - margin.left - margin.right)/2)
-                                .attr('y', newH - 10);
-                        }
-                        if (svg.select('.y-label')) {
-                            svg.select('.y-label')
-                                .attr('x', -(margin.top + (newH - margin.top - margin.bottom)/2))
-                                .attr('y', 15);
-                        }
-                    }
+                if (!plot || !canvas || cW === 0 || cH === 0) return;
 
-                    // 5. Update Axes based on current camera
-                    if (registryEntry && registryEntry.updateAxesFromCamera) {
-                        registryEntry.updateAxesFromCamera();
-                    }
-                    
-                    // 6. Force redraw
-                    plot.draw();
+                // Update canvas = internal area (without margins)
+                canvas.width = cW;
+                canvas.height = cH;
+                canvas.style.width = cW + 'px';
+                canvas.style.height = cH + 'px';
+                canvas.style.left = margin.left + 'px';
+                canvas.style.top = margin.top + 'px';
+
+                // Update plot dimensions
+                plot.set({ width: cW, height: cH });
+
+                // Update SVG/axes = full container size
+                if (svg) {
+                    svg.attr('width', fullW).attr('height', fullH);
+                    if (xScale) xScale.range([margin.left, fullW - margin.right]);
+                    if (yScale) yScale.range([fullH - margin.bottom, margin.top]);
+                    if (xAxisG) xAxisG.attr('transform', `translate(0, ${fullH - margin.bottom})`);
+                    svg.select('.x-label')
+                        .attr('x', margin.left + (fullW - margin.left - margin.right)/2)
+                        .attr('y', fullH - 10);
+                    svg.select('.y-label')
+                        .attr('x', -(margin.top + (fullH - margin.top - margin.bottom)/2))
+                        .attr('y', 15);
                 }
+
+                // Update axes from current camera
+                const entry = globalRegistry.get(plotId);
+                if (entry?.updateAxesFromCamera) entry.updateAxesFromCamera();
+
+                // Force redraw
+                requestAnimationFrame(() => { try { plot.draw(); } catch(e) {} });
             }
         };
     }
