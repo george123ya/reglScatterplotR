@@ -2,7 +2,6 @@ library(shiny)
 library(htmlwidgets)
 library(base64enc) 
 
-#' Scalable scatterplot HTML widget with binary transfer
 #' @export
 `%||%` <- function(x, y) {
   if (is.null(x)) y else x
@@ -30,29 +29,48 @@ my_scatterplot <- function(data = NULL, x, y,
                            xrange = NULL, yrange = NULL,
                            showAxes = TRUE, showTooltip = TRUE, 
                            pointColor = NULL, opacity = NULL, backgroundColor = NULL, 
+                           axisColor = "#333333", # <--- NEW PARAMETER
+                           legendBg = "#ffffff",   # <--- NEW
+                           legendText = "#000000", # <--- NEW
                            width = NULL, height = NULL, legend_title = NULL, 
                            enableDownload = TRUE, plotId = NULL, syncPlots = NULL,
                            elementId = NULL,
-                           dataVersion = NULL) {
+                           dataVersion = NULL,
+                           masterId = NULL,
+                           autoFit = FALSE,
+                           margins = NULL,
+                           fontSize = 12,
+                           legendFontSize = 12,
+                           filtered_indices = NULL, 
+                           selected_indices = NULL,
+                           syncState = TRUE 
+                           ) {
 
+  # --- DATA EXTRACTION ---
   if (!is.null(data)) {
     x_vec <- data[, x]
     y_vec <- data[, y]
     if (!is.null(colorBy)) color_vec <- data[, colorBy] else color_vec <- NULL
+    
+    if (!is.null(group_var) && group_var %in% names(data)) {
+      group_vec <- data[, group_var]
+    } else {
+      group_vec <- group_var
+    }
   } else {
     x_vec <- x
     y_vec <- y
     color_vec <- colorBy
+    group_vec <- group_var
   }
 
   x_vec <- as.numeric(unname(x_vec))
   y_vec <- as.numeric(unname(y_vec))
   n_points <- length(x_vec)
   
-  # --- AUTO-PERFORMANCE MODE ---
+  # --- AUTO-PERFORMANCE ---
   performance_mode <- FALSE
   if (n_points > 500000) {
-    message("🚀 High Data Volume (", n_points, "): Enabling 'performanceMode'")
     performance_mode <- TRUE
     if (is.null(size)) size <- 1 
     if (!is.null(gene_names)) gene_names <- NULL 
@@ -79,6 +97,9 @@ my_scatterplot <- function(data = NULL, x, y,
   options <- list(size = size, opacity = opacity)
   legend_data <- list()
   
+  color_var_name <- if(!is.null(colorBy) && is.character(colorBy) && length(colorBy)==1) colorBy else "Solid_Color"
+  group_var_name <- if(!is.null(group_var) && is.character(group_var) && length(group_var)==1) group_var else NULL
+  
   # --- COLOR LOGIC ---
   if (!is.null(pointColor)) {
     options$pointColor <- pointColor
@@ -89,10 +110,10 @@ my_scatterplot <- function(data = NULL, x, y,
       levels <- levels(as.factor(color_vec))
       
       if (!is.null(custom_palette)) {
-         cols <- if (!is.null(names(custom_palette))) custom_palette[levels] else custom_palette[1:length(levels)]
+          cols <- if (!is.null(names(custom_palette))) custom_palette[levels] else custom_palette[1:length(levels)]
       } else {
-         cols <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
-         if (length(levels) > 11) cols <- colorRampPalette(cols)(length(levels))
+          cols <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
+          if (length(levels) > 11) cols <- colorRampPalette(cols)(length(levels))
       }
       cols[is.na(cols)] <- "#808080"
       
@@ -103,7 +124,14 @@ my_scatterplot <- function(data = NULL, x, y,
       z_norm <- as.integer(as.factor(color_vec)) - 1L
       options$colorBy <- "valueA" 
       options$pointColor <- as.vector(hex_cols)
-      legend_data <- list(names = levels, colors = as.vector(hex_cols), var_type = var_type, title = legend_title)
+
+      legend_data <- list(
+        names = I(levels),             
+        colors = I(as.vector(hex_cols)),
+        var_type = var_type, 
+        title = legend_title,
+        var_name = color_var_name
+      )
       
     } else if (is.numeric(color_vec)) {
       var_type <- "continuous"
@@ -121,16 +149,15 @@ my_scatterplot <- function(data = NULL, x, y,
       options$colorBy <- "valueA"
       options$pointColor <- p_hex
       legend_data <- list(minVal = rng[1], maxVal = rng[2], midVal = mean(color_vec, na.rm=TRUE), 
-                          var_type = var_type, colors = p_hex, title = legend_title %||% "Value")
+                          var_type = var_type, colors = p_hex, title = legend_title %||% "Value",
+                          var_name = color_var_name)
     }
   } else {
     options$pointColor <- "#0072B2"
     options$colorBy <- NULL
   }
 
-  # --- SIDE DATA ENCODING ---
-  
-  # 1. Strainer Data (Continuous Filters)
+  # --- FILTERS ---
   filter_payload <- list()
   if (!is.null(filter_vars) && is.data.frame(filter_vars)) {
       for(col in names(filter_vars)) {
@@ -139,12 +166,24 @@ my_scatterplot <- function(data = NULL, x, y,
       }
   }
   
-  # 2. Group Data (Categorical Filters from Legend)
   group_payload <- NULL
-  if (!is.null(group_var)) {
-      # Convert to 0-based integer index for JS
-      g_vals <- as.integer(as.factor(group_var)) - 1L
+  if (!is.null(group_vec)) {
+      g_vals <- as.integer(as.factor(group_vec)) - 1L
       group_payload <- to_base64(g_vals)
+  }
+
+  if (is.null(margins)) {
+    margins <- list(top = 20, right = 20, bottom = 40, left = 50)
+  }
+
+  init_server_indices <- NULL
+  if (!is.null(filtered_indices)) {
+    init_server_indices <- as.integer(filtered_indices) 
+  }
+  
+  init_selected_indices <- NULL
+  if (!is.null(selected_indices)) {
+    init_selected_indices <- as.integer(selected_indices) 
   }
 
   widget_spec <- list(
@@ -161,11 +200,24 @@ my_scatterplot <- function(data = NULL, x, y,
     xlab = xlab, ylab = ylab,
     showAxes = showAxes, showTooltip = showTooltip,
     backgroundColor = backgroundColor,
+    axisColor = axisColor, # <--- PASS TO JS
+    legendBg = legendBg,       # <--- Pass to JS
+    legendText = legendText,   # <--- Pass to JS
     enableDownload = enableDownload,
     gene_names = if(!is.null(gene_names)) as.character(gene_names) else NULL,
     plotId = plotId, syncPlots = syncPlots,
     dataVersion = dataVersion,
-    performanceMode = performance_mode
+    performanceMode = performance_mode,
+    masterId = masterId,
+    autoFit = autoFit,
+    margins = margins,
+    fontSize = fontSize,
+    legendFontSize = legendFontSize,
+    init_server_indices = init_server_indices,
+    init_selected_indices = init_selected_indices,
+    syncState = syncState,
+    colorVar = color_var_name,
+    groupVar = group_var_name
   )
 
   htmlwidgets::createWidget(
@@ -196,7 +248,6 @@ enableMyScatterplotSync <- function(plotIds, enabled = TRUE, session = shiny::ge
 
 #' @export
 updateMyScatterplotSize <- function(plotIds, size, session = shiny::getDefaultReactiveDomain()) {
-  # Handle both single string or vector of IDs
   for(id in plotIds) {
     session$sendCustomMessage("update_point_size", list(plotId = id, size = size))
   }
