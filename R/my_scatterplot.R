@@ -24,15 +24,16 @@ my_scatterplot <- function(data = NULL, x, y,
                            filter_vars = NULL, 
                            size = NULL, 
                            categorical_palette = "Set1", continuous_palette = "viridis", 
-                           custom_palette = NULL, gene_names = NULL,
+                           custom_palette = NULL, custom_colors = NULL,
+                           gene_names = NULL,
                            xlab = "X", ylab = "Y", 
                            xrange = NULL, yrange = NULL,
                            showAxes = TRUE, showTooltip = TRUE, 
                            pointColor = NULL, opacity = NULL, backgroundColor = NULL, 
-                           axisColor = "#333333", # <--- NEW PARAMETER
-                           legendBg = "#ffffff",   # <--- NEW
-                           legendText = "#000000", # <--- NEW
-                           width = NULL, height = NULL, legend_title = NULL, 
+                           axisColor = "#333333", 
+                           legendBg = "#ffffff",  
+                           legendText = "#000000",
+                           width = NULL, height = NULL, legend_title = NULL, title = NULL,
                            enableDownload = TRUE, plotId = NULL, syncPlots = NULL,
                            elementId = NULL,
                            dataVersion = NULL,
@@ -109,9 +110,25 @@ my_scatterplot <- function(data = NULL, x, y,
       var_type <- "categorical"
       levels <- levels(as.factor(color_vec))
       
-      if (!is.null(custom_palette)) {
+      # 1. Try Custom Global Colors (Sync)
+      if (!is.null(custom_colors) && length(custom_colors) > 0) {
+        # Match levels to the named vector custom_colors
+        # If a level is missing in custom_colors, fall back to grey or generate one
+        cols <- unname(custom_colors[levels])
+        
+        # Fill NAs if any levels were missing in the global registry
+        if (any(is.na(cols))) {
+          fallback_cols <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
+          if(length(levels) > 11) fallback_cols <- colorRampPalette(fallback_cols)(length(levels))
+          cols[is.na(cols)] <- fallback_cols[is.na(cols)]
+        }
+      } 
+      # 2. Try Custom Palette (Legacy argument)
+      else if (!is.null(custom_palette)) {
           cols <- if (!is.null(names(custom_palette))) custom_palette[levels] else custom_palette[1:length(levels)]
-      } else {
+      } 
+      # 3. Default Generation
+      else {
           cols <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
           if (length(levels) > 11) cols <- colorRampPalette(cols)(length(levels))
       }
@@ -200,9 +217,9 @@ my_scatterplot <- function(data = NULL, x, y,
     xlab = xlab, ylab = ylab,
     showAxes = showAxes, showTooltip = showTooltip,
     backgroundColor = backgroundColor,
-    axisColor = axisColor, # <--- PASS TO JS
-    legendBg = legendBg,       # <--- Pass to JS
-    legendText = legendText,   # <--- Pass to JS
+    axisColor = axisColor,
+    legendBg = legendBg,       
+    legendText = legendText,   
     enableDownload = enableDownload,
     gene_names = if(!is.null(gene_names)) as.character(gene_names) else NULL,
     plotId = plotId, syncPlots = syncPlots,

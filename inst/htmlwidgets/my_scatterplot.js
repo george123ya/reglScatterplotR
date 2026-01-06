@@ -367,12 +367,12 @@ HTMLWidgets.widget({
             const entry = globalRegistry.get(plotId);
             const bg = entry.legendBg || 'rgba(255, 255, 255, 0.85)';
             const txt = entry.legendText || '#222';
-            const border = (txt === '#222') ? '#eee' : '#475569'; // Darker border for dark mode
+            const border = (txt === '#222') ? '#eee' : '#475569'; 
 
             if (!legendDiv) {
+                // ... [Creation of legendDiv remains same] ...
                 legendDiv = document.createElement('div');
                 legendDiv.className = 'sp-legend';
-                // Apply dynamic colors
                 legendDiv.style.cssText = `position: absolute; top: 10px; right: 10px; 
                                         background: ${bg}; color: ${txt};
                                         padding: 8px; border-radius: 6px; 
@@ -397,7 +397,7 @@ HTMLWidgets.widget({
             if (legendData.title) {
                 const t = document.createElement('div');
                 t.innerText = legendData.title; 
-                t.style.cssText = `margin-bottom: 6px; font-weight: 600; font-size: ${fontSize+1}px; text-align: center; color: inherit;`; // inherit color
+                t.style.cssText = `margin-bottom: 6px; font-weight: 600; font-size: ${fontSize+1}px; text-align: center; color: inherit;`;
                 legendDiv.appendChild(t);
             }
 
@@ -429,21 +429,43 @@ HTMLWidgets.widget({
                         el: swatch, theme: 'nano', default: legendData.colors[i], defaultRepresentation: 'HEX', useAsButton: true,
                         components: { preview: true, opacity: false, hue: true, interaction: { hex: true, rgba: false, input: true, save: true } }
                     });
+                    
+                    // --- MODIFIED SAVE HANDLER FOR GLOBAL SYNC ---
                     pickrInst.on('save', (color, instance) => {
                         const newHex = color.toHEXA().toString().substring(0, 7);
-                        legendData.colors[i] = newHex; swatch.style.backgroundColor = newHex; 
+                        
+                        // 1. Update Local Visuals immediately
+                        legendData.colors[i] = newHex; 
+                        swatch.style.backgroundColor = newHex; 
                         plot.set({ pointColor: [...legendData.colors] }); 
-                        if(window.Shiny && window.Shiny.setInputValue && plotId) window.Shiny.setInputValue(plotId + '_legend_colors', legendData.colors);
+                        
+                        // 2. Notify Shiny (Legacy)
+                        if(window.Shiny && window.Shiny.setInputValue && plotId) {
+                            window.Shiny.setInputValue(plotId + '_legend_colors', legendData.colors);
+                        }
+                        
+                        // 3. Notify Shiny for Global Sync (Category-Specific)
+                        if (window.Shiny && window.Shiny.setInputValue) {
+                            window.Shiny.setInputValue('sp_color_change', {
+                                variable: legendData.var_name,
+                                category: name,
+                                color: newHex
+                            });
+                        }
+
                         pickrInst.hide();
                     });
+                    
                     swatch.addEventListener('click', (e) => e.stopPropagation());
                     
                     const label = document.createElement('span');
-                    label.style.color = '#444'; label.innerText = name;
+                    label.style.color = 'inherit'; label.innerText = name; // Inherit text color
                     
                     row.onclick = (e) => {
                           if (e.target.closest('.pcr-app')) return;
                           let activeSet = globalRegistry.categorySelections.get(myVar);
+                          
+                          // --- 1. Handle Shift/Ctrl Clicks (Existing Logic) ---
                           if (e.shiftKey && lastClickedCategoryIndex !== -1) {
                             const start = Math.min(lastClickedCategoryIndex, i); 
                             const end = Math.max(lastClickedCategoryIndex, i);
@@ -461,6 +483,7 @@ HTMLWidgets.widget({
                           }
                           lastClickedCategoryIndex = i;
 
+                          // --- 2. Update Internal Filters (Existing Logic) ---
                           const entry = globalRegistry.get(plotId);
                           const currentSelections = globalRegistry.categorySelections.get(myVar);
                           if (!currentSelections) { globalRegistry.indexFilters.delete(myVar); } 
@@ -472,17 +495,35 @@ HTMLWidgets.widget({
                               else if (entry.groupVar === myVar) buffer = entry.categoryData;
                               if (buffer) { for(let p=0; p<n; p++) { if (currentSelections.has(Math.round(buffer[p]))) { newIndexSet.add(p); } } globalRegistry.indexFilters.set(myVar, newIndexSet); } 
                           }
+                          
+                          // --- 3. Update Visuals (Existing Logic) ---
                           globalRegistry.forEach(entry => { if(entry.updateLegendUI) entry.updateLegendUI(); recalcAndApplyFilters(entry); });
+
+                          // --- [NEW] 4. Notify Shiny of Selection ---
+                          if (window.Shiny && window.Shiny.setInputValue) {
+                              const allowedIndices = currentSelections ? Array.from(currentSelections) : null;
+                              let allowedNames = null;
+                              if (allowedIndices && legendData.names) {
+                                  // Map numeric indices back to strings (e.g. 0 -> "T-Cells")
+                                  allowedNames = allowedIndices.map(idx => legendData.names[idx]);
+                              }
+                              window.Shiny.setInputValue("legend_selection_change", {
+                                  variable: myVar,
+                                  allowed_names: allowedNames,
+                                  timestamp: Date.now()
+                              });
+                          }
                     };
                     row.appendChild(label); legendDiv.appendChild(row);
                 });
             } else if (legendData.var_type === 'continuous') {
+                 // ... [Continuous legend remains same] ...
                  const gradContainer = document.createElement('div');
                  gradContainer.style.cssText = 'display: flex; align-items: flex-start; margin-top: 5px;';
                  const grad = document.createElement('div');
                  grad.style.cssText = `width: 10px; height: 80px; background: linear-gradient(to top, ${legendData.colors.join(',')}); border-radius: 2px; margin-right: 6px;`;
                  const lbls = document.createElement('div');
-                 lbls.style.cssText = `display: flex; flex-direction: column; justify-content: space-between; height: 80px; color: #444; font-size: ${fontSize-1}px;`;
+                 lbls.style.cssText = `display: flex; flex-direction: column; justify-content: space-between; height: 80px; color: inherit; font-size: ${fontSize-1}px;`;
                  lbls.innerHTML = `<span>${legendData.maxVal.toFixed(1)}</span><span>${legendData.midVal.toFixed(1)}</span><span>${legendData.minVal.toFixed(1)}</span>`;
                  gradContainer.appendChild(grad); gradContainer.appendChild(lbls);
                  legendDiv.appendChild(gradContainer);
