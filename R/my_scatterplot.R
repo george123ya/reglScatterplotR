@@ -17,17 +17,47 @@ to_base64 <- function(vec) {
   paste0("base64:", base64enc::base64encode(raw_data))
 }
 
+parse_limit <- function(limit_arg, data_vec, default_fn) {
+  if (is.null(limit_arg)) return(default_fn(data_vec, na.rm = TRUE))
+  
+  val <- if (is.character(limit_arg)) {
+    # Handle "p99", "p95", "min", "max"
+    if (grepl("^p[0-9]+(\\.[0-9]+)?$", limit_arg)) {
+      p <- as.numeric(sub("p", "", limit_arg)) / 100
+      quantile(data_vec, probs = p, na.rm = TRUE)
+    } else if (limit_arg == "min") {
+      min(data_vec, na.rm = TRUE)
+    } else if (limit_arg == "max") {
+      max(data_vec, na.rm = TRUE)
+    } else {
+      # Fallback for "max" if passed as string literal from UI
+      default_fn(data_vec, na.rm = TRUE) 
+    }
+  } else {
+    as.numeric(limit_arg)
+  }
+
+  return(as.numeric(unname(val)))
+}
+
 #' @export
 my_scatterplot <- function(data = NULL, x, y, 
                            colorBy = NULL, 
                            group_var = NULL,
                            filter_vars = NULL, 
                            size = NULL, 
-                           categorical_palette = "Set1", continuous_palette = "viridis", 
-                           custom_palette = NULL, custom_colors = NULL,
+                           categorical_palette = "Set1", 
+                           continuous_palette = "viridis", 
+                           custom_palette = NULL, 
+                           custom_colors = NULL,
                            gene_names = NULL,
                            xlab = "X", ylab = "Y", 
                            xrange = NULL, yrange = NULL,
+                           # --- NEW SCALING ARGUMENTS ---
+                           vmin = NULL,           # e.g., "p01", 0, or NULL (auto)
+                           vmax = NULL,           # e.g., "p99", 5, or NULL (auto)
+                           center_zero = FALSE,   # If TRUE, forces scale to be symmetric around 0 (-x to +x)
+                           # -----------------------------
                            showAxes = TRUE, showTooltip = TRUE, 
                            pointColor = NULL, opacity = NULL, backgroundColor = NULL, 
                            axisColor = "#333333", 
@@ -81,7 +111,7 @@ my_scatterplot <- function(data = NULL, x, y,
     if (is.null(opacity)) opacity <- 0.8
   }
   
-  # NORMALIZE
+  # NORMALIZE COORDINATES (X/Y)
   if (!is.null(xrange)) { xmin <- xrange[1]; xmax <- xrange[2] } 
   else { xmin <- min(x_vec, na.rm=TRUE); xmax <- max(x_vec, na.rm=TRUE) }
   
@@ -90,7 +120,6 @@ my_scatterplot <- function(data = NULL, x, y,
 
   x_norm <- -1 + 2 * (x_vec - xmin) / (xmax - xmin)
   y_norm <- -1 + 2 * (y_vec - ymin) / (ymax - ymin)
-  
   x_norm <- pmax(-1, pmin(1, x_norm))
   y_norm <- pmax(-1, pmin(1, y_norm))
   
@@ -107,28 +136,21 @@ my_scatterplot <- function(data = NULL, x, y,
     options$colorBy <- NULL 
   } else if (!is.null(color_vec)) {
     if (is.character(color_vec) || is.factor(color_vec)) {
+      # === CATEGORICAL ===
       var_type <- "categorical"
       levels <- levels(as.factor(color_vec))
       
-      # 1. Try Custom Global Colors (Sync)
+      # [Palette selection logic same as before...]
       if (!is.null(custom_colors) && length(custom_colors) > 0) {
-        # Match levels to the named vector custom_colors
-        # If a level is missing in custom_colors, fall back to grey or generate one
         cols <- unname(custom_colors[levels])
-        
-        # Fill NAs if any levels were missing in the global registry
         if (any(is.na(cols))) {
           fallback_cols <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
           if(length(levels) > 11) fallback_cols <- colorRampPalette(fallback_cols)(length(levels))
           cols[is.na(cols)] <- fallback_cols[is.na(cols)]
         }
-      } 
-      # 2. Try Custom Palette (Legacy argument)
-      else if (!is.null(custom_palette)) {
+      } else if (!is.null(custom_palette)) {
           cols <- if (!is.null(names(custom_palette))) custom_palette[levels] else custom_palette[1:length(levels)]
-      } 
-      # 3. Default Generation
-      else {
+      } else {
           cols <- RColorBrewer::brewer.pal(min(length(levels), 11), categorical_palette)
           if (length(levels) > 11) cols <- colorRampPalette(cols)(length(levels))
       }
@@ -151,23 +173,54 @@ my_scatterplot <- function(data = NULL, x, y,
       )
       
     } else if (is.numeric(color_vec)) {
+      # === CONTINUOUS (UPDATED FOR VMAX/VMIN) ===
       var_type <- "continuous"
-      rng <- range(color_vec, na.rm = TRUE)
-      z_norm <- (color_vec - rng[1]) / (rng[2] - rng[1])
+      
+      # 1. Determine Limits
+      c_min <- parse_limit(vmin, color_vec, min)
+      c_max <- parse_limit(vmax, color_vec, max)
+
+      # 2. Handle Symmetry (e.g. for Z-scores)
+      if (center_zero) {
+        abs_lim <- max(abs(c_min), abs(c_max))
+        c_min <- -abs_lim
+        c_max <- abs_lim
+      }
+      
+      # 3. Clip Data (This fixes the "One point makes everything purple" issue)
+      # We create a clipped copy just for normalization
+      color_vec_clipped <- pmax(c_min, pmin(c_max, color_vec))
+      
+      # 4. Normalize to [0, 1] for WebGL
+      # Avoid division by zero if all values are same
+      rng_diff <- c_max - c_min
+      if (rng_diff == 0) rng_diff <- 1
+      
+      z_norm <- (color_vec_clipped - c_min) / rng_diff
       
       p_func <- switch(continuous_palette,
                        viridis = viridisLite::viridis,
                        magma = viridisLite::magma,
                        plasma = viridisLite::plasma,
                        inferno = viridisLite::inferno,
+                       cividis = viridisLite::cividis,
+                       turbo = viridisLite::turbo,
                        viridisLite::viridis)
       p_hex <- substr(p_func(256), 1, 7)
       
       options$colorBy <- "valueA"
       options$pointColor <- p_hex
-      legend_data <- list(minVal = rng[1], maxVal = rng[2], midVal = mean(color_vec, na.rm=TRUE), 
-                          var_type = var_type, colors = p_hex, title = legend_title %||% "Value",
-                          var_name = color_var_name)
+      
+      # Send the USED min/max to the legend so it displays correctly
+      legend_data <- list(
+        minVal = c_min, 
+        maxVal = c_max, 
+        midVal = (c_min + c_max) / 2, 
+        var_type = var_type, 
+        colors = p_hex, 
+        title = legend_title %||% "Value",
+        var_name = color_var_name
+      )
     }
   } else {
     options$pointColor <- "#0072B2"

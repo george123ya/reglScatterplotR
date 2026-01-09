@@ -275,16 +275,81 @@ HTMLWidgets.widget({
             const style = document.createElement('style');
             style.id = styleId;
             style.innerHTML = `
-                .sp-download-btn { position: absolute; top: 10px; left: 10px; z-index: 100; background: transparent; border: 1px solid #ccc; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-family: sans-serif; font-size: 13px; color: #333; box-shadow: 0 2px 4px rgba(0,0,0,0.1); user-select: none; transition: background 0.2s; }
-                .sp-download-btn:hover { background: #f8f9fa; }
-                .sp-menu { display: none; position: absolute; top: 100%; left: 0; margin-top: 5px; background: transparent; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 101; }
-                .sp-menu-item { padding: 8px 12px; cursor: pointer; font-size: 13px; font-family: sans-serif; color: #333; }
-                .sp-menu-item:hover { background: #f0f7ff; color: #000; }
+                /* --- Download Button (Matched to App.R) --- */
+                .sp-download-btn {
+                    background: var(--bg-card, #ffffff);
+                    border: 1px solid var(--border-color, #e2e8f0);
+                    border-radius: 6px;
+                    padding: 5px 10px;
+                    cursor: pointer;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: var(--text-sub, #64748b);
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+                    transition: all 0.2s ease;
+                    display: flex; align-items: center; gap: 4px;
+                    user-select: none;
+                }
+                .sp-download-btn:hover {
+                    background: var(--bg-panel, #f8fafc);
+                    border-color: var(--accent, #3b82f6);
+                    color: var(--accent, #3b82f6);
+                    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+                    transform: translateY(-1px);
+                }
+                .sp-download-btn svg { width: 14px; height: 14px; }
+                
+                /* --- Download Menu --- */
+                .sp-menu {
+                    display: none; position: absolute; top: 100%; right: 0; margin-top: 4px;
+                    background: var(--bg-card, #ffffff);
+                    border: 1px solid var(--border-color, #e2e8f0);
+                    border-radius: 8px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+                    padding: 4px; min-width: 100px; z-index: 101;
+                }
+                .sp-menu-item {
+                    display: block; width: 100%; text-align: left; padding: 6px 10px;
+                    font-size: 12px; font-family: 'Inter', sans-serif;
+                    color: var(--text-sub, #64748b); cursor: pointer;
+                    border-radius: 4px; transition: all 0.15s;
+                }
+                .sp-menu-item:hover {
+                    background: var(--bg-panel, #f1f5f9);
+                    color: var(--accent, #3b82f6);
+                }
+
+                /* --- Draggable Legend Wrapper (Kept from previous step) --- */
+                .sp-legend-wrapper {
+                    position: absolute; z-index: 100; display: flex; flex-direction: column;
+                    background: var(--bg-card, rgba(255, 255, 255, 0.95));
+                    border: 1px solid var(--border-color, #e2e8f0);
+                    border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                    transition: opacity 0.2s, box-shadow 0.2s;
+                    max-height: 90%;
+                }
+                .sp-legend-wrapper.dragging { opacity: 0.9; box-shadow: 0 8px 24px rgba(0,0,0,0.2); cursor: move; }
+                .sp-legend-wrapper.minimized .sp-legend-content { display: none; }
+                .sp-legend-header {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: 6px 10px; border-bottom: 1px solid var(--border-color, #e2e8f0);
+                    background: var(--bg-panel, rgba(245, 245, 245, 0.5));
+                    border-radius: 8px 8px 0 0; cursor: move; user-select: none;
+                    min-height: 28px;
+                }
+                .sp-legend-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-sub, #64748b); letter-spacing: 0.5px; }
+                .sp-legend-btn {
+                    width: 20px; height: 20px; border: none; background: transparent;
+                    color: var(--text-sub, #64748b); cursor: pointer; border-radius: 4px;
+                    display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;
+                }
+                .sp-legend-btn:hover { background: rgba(0,0,0,0.05); color: var(--text-main, #333); }
+                .sp-legend-content { padding: 8px; overflow-y: auto; max-height: 300px; }
                 .sp-legend { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
                 .sp-legend-item { transition: opacity 0.2s; user-select: none; }
-                .sp-legend-item:hover { background-color: #f5f5f5; border-radius: 4px; }
+                .sp-legend-item:hover { background-color: rgba(0,0,0,0.03); border-radius: 4px; }
                 .sp-color-swatch { width: 14px; height: 14px; border-radius: 3px; margin-right: 8px; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.2); box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-                .sp-color-swatch:hover { border-color: #000; }
                 .sp-loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; position: absolute; top: 50%; left: 50%; margin-top: -15px; margin-left: -15px; z-index: 50; display: none; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             `;
@@ -362,51 +427,149 @@ HTMLWidgets.widget({
             });
         };
 
-        const createLegend = async function(container, legendData, fontSize = 12) {
-            // Get colors from the registry entry for THIS plot
-            const entry = globalRegistry.get(plotId);
-            const bg = entry.legendBg || 'rgba(255, 255, 255, 0.85)';
-            const txt = entry.legendText || '#222';
-            const border = (txt === '#222') ? '#eee' : '#475569'; 
+        let legendWrapper = null; 
 
-            if (!legendDiv) {
-                // ... [Creation of legendDiv remains same] ...
-                legendDiv = document.createElement('div');
-                legendDiv.className = 'sp-legend';
-                legendDiv.style.cssText = `position: absolute; top: 10px; right: 10px; 
-                                        background: ${bg}; color: ${txt};
-                                        padding: 8px; border-radius: 6px; 
-                                        box-shadow: 0 1px 4px rgba(0,0,0,0.2); 
-                                        max-height: 80%; overflow-y: auto; 
-                                        font-size: ${fontSize}px; z-index: 10; 
-                                        border: 1px solid ${border};`;
-                container.appendChild(legendDiv);
-            } else {
-                // Update existing legend style
-                legendDiv.style.background = bg;
-                legendDiv.style.color = txt;
-                legendDiv.style.borderColor = border;
-                legendDiv.innerHTML = '';
-            }
+        const createLegend = async function(container, legendData, fontSize = 12) {
+            const entry = globalRegistry.get(plotId);
+            const bg = entry.legendBg || 'var(--bg-card, #ffffff)';
+            const txt = entry.legendText || 'var(--text-main, #222)';
+            const border = (txt.includes('#222') || txt === '#222') ? 'var(--border-color, #eee)' : 'var(--border-color, #475569)';
 
             if (!legendData || !legendData.var_type || legendData.var_type === 'none') {
-                legendDiv.style.display = 'none'; return; 
-            }
-            legendDiv.style.display = 'block';
-
-            if (legendData.title) {
-                const t = document.createElement('div');
-                t.innerText = legendData.title; 
-                t.style.cssText = `margin-bottom: 6px; font-weight: 600; font-size: ${fontSize+1}px; text-align: center; color: inherit;`;
-                legendDiv.appendChild(t);
+                if (legendWrapper) legendWrapper.style.display = 'none';
+                return;
             }
 
+            if (!legendWrapper) {
+                legendWrapper = document.createElement('div');
+                legendWrapper.className = 'sp-legend-wrapper';
+                // Default position
+                legendWrapper.style.top = '10px';
+                legendWrapper.style.right = '10px'; 
+                legendWrapper.style.left = 'auto'; 
+                
+                const header = document.createElement('div');
+                header.className = 'sp-legend-header';
+                header.innerHTML = `<span class="sp-legend-title">Legend</span>
+                                    <button class="sp-legend-btn" title="Minimize">−</button>`;
+                
+                const content = document.createElement('div');
+                content.className = 'sp-legend-content';
+                
+                legendDiv = document.createElement('div');
+                legendDiv.className = 'sp-legend';
+                
+                content.appendChild(legendDiv);
+                legendWrapper.appendChild(header);
+                legendWrapper.appendChild(content);
+                container.appendChild(legendWrapper);
+
+                const minBtn = header.querySelector('.sp-legend-btn');
+                minBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const isMin = legendWrapper.classList.toggle('minimized');
+                    minBtn.innerText = isMin ? '+' : '−';
+                };
+
+                // --- FIX: Prevent resize calculation when tab is hidden ---
+                const keepInBounds = () => {
+                    if (!legendWrapper || legendWrapper.style.display === 'none') return;
+
+                    // CRITICAL FIX: If width is 0 (hidden tab), STOP. 
+                    // Otherwise it calculates 'maxLeft' as negative and forces 'left' to 0.
+                    if (container.clientWidth === 0 || container.clientHeight === 0) return;
+                    
+                    // Only apply clamping if we are using 'left' positioning (meaning it was dragged)
+                    if (legendWrapper.style.left && legendWrapper.style.left !== 'auto') {
+                        const maxLeft = container.clientWidth - legendWrapper.offsetWidth;
+                        const maxTop = container.clientHeight - legendWrapper.offsetHeight;
+                        
+                        const curLeft = parseInt(legendWrapper.style.left) || 0;
+                        const curTop = parseInt(legendWrapper.style.top) || 0;
+
+                        const newLeft = Math.max(0, Math.min(curLeft, maxLeft));
+                        const newTop = Math.max(0, Math.min(curTop, maxTop));
+                        
+                        if (newLeft !== curLeft) legendWrapper.style.left = newLeft + 'px';
+                        if (newTop !== curTop) legendWrapper.style.top = newTop + 'px';
+                    }
+                };
+
+                const ro = new ResizeObserver(keepInBounds);
+                ro.observe(container);
+                ro.observe(legendWrapper);
+
+                // --- Drag Logic ---
+                let isDragging = false;
+                let startX, startY, initialRight, initialTop;
+
+                header.onmousedown = (e) => {
+                    if (e.target.tagName === 'BUTTON') return;
+                    e.preventDefault();
+                    isDragging = true;
+                    legendWrapper.classList.add('dragging');
+                    
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    
+                    const rect = legendWrapper.getBoundingClientRect();
+                    const containerRect = container.getBoundingClientRect();
+                    const offsetLeft = rect.left - containerRect.left;
+                    const offsetTop = rect.top - containerRect.top;
+                    
+                    // Switch to explicit left/top positioning on first drag
+                    legendWrapper.style.right = 'auto';
+                    legendWrapper.style.left = offsetLeft + 'px';
+                    legendWrapper.style.top = offsetTop + 'px';
+                    
+                    initialTop = offsetTop;
+                    initialRight = offsetLeft;
+                };
+
+                const onMove = (e) => {
+                    if (!isDragging) return;
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    let newLeft = initialRight + dx;
+                    let newTop = initialTop + dy;
+                    
+                    const maxLeft = container.clientWidth - legendWrapper.offsetWidth;
+                    const maxTop = container.clientHeight - legendWrapper.offsetHeight;
+                    
+                    legendWrapper.style.left = Math.max(0, Math.min(newLeft, maxLeft)) + 'px';
+                    legendWrapper.style.top = Math.max(0, Math.min(newTop, maxTop)) + 'px';
+                };
+
+                const onUp = () => {
+                    if (isDragging) {
+                        isDragging = false;
+                        legendWrapper.classList.remove('dragging');
+                    }
+                };
+                
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            }
+
+            legendWrapper.style.display = 'flex';
+            legendWrapper.style.background = bg;
+            legendWrapper.style.borderColor = border;
+            legendWrapper.style.color = txt;
+            
+            const titleEl = legendWrapper.querySelector('.sp-legend-title');
+            if(titleEl) titleEl.innerText = legendData.title || "Legend";
+
+            legendDiv.innerHTML = '';
+            legendDiv.style.fontSize = fontSize + 'px';
+
+            // ... [Keep Categorical/Continuous population logic below] ...
             if (legendData.var_type === 'categorical') {
                 if (!Array.isArray(legendData.names)) legendData.names = [legendData.names];
                 if (!Array.isArray(legendData.colors)) legendData.colors = [legendData.colors];
                 totalCategories = legendData.names.length;
                 let Pickr = window.Pickr;
                 if (!Pickr) { const mod = await import('https://esm.sh/@simonwep/pickr'); Pickr = mod.default; window.Pickr = Pickr; }
+                
                 legendData.names.forEach((name, i) => {
                     const row = document.createElement('div');
                     row.className = 'sp-legend-item';
@@ -430,21 +593,11 @@ HTMLWidgets.widget({
                         components: { preview: true, opacity: false, hue: true, interaction: { hex: true, rgba: false, input: true, save: true } }
                     });
                     
-                    // --- MODIFIED SAVE HANDLER FOR GLOBAL SYNC ---
                     pickrInst.on('save', (color, instance) => {
                         const newHex = color.toHEXA().toString().substring(0, 7);
-                        
-                        // 1. Update Local Visuals immediately
                         legendData.colors[i] = newHex; 
                         swatch.style.backgroundColor = newHex; 
                         plot.set({ pointColor: [...legendData.colors] }); 
-                        
-                        // 2. Notify Shiny (Legacy)
-                        if(window.Shiny && window.Shiny.setInputValue && plotId) {
-                            window.Shiny.setInputValue(plotId + '_legend_colors', legendData.colors);
-                        }
-                        
-                        // 3. Notify Shiny for Global Sync (Category-Specific)
                         if (window.Shiny && window.Shiny.setInputValue) {
                             window.Shiny.setInputValue('sp_color_change', {
                                 variable: legendData.var_name,
@@ -452,20 +605,17 @@ HTMLWidgets.widget({
                                 color: newHex
                             });
                         }
-
                         pickrInst.hide();
                     });
                     
                     swatch.addEventListener('click', (e) => e.stopPropagation());
                     
                     const label = document.createElement('span');
-                    label.style.color = 'inherit'; label.innerText = name; // Inherit text color
+                    label.style.color = 'inherit'; label.innerText = name; 
                     
                     row.onclick = (e) => {
                           if (e.target.closest('.pcr-app')) return;
                           let activeSet = globalRegistry.categorySelections.get(myVar);
-                          
-                          // --- 1. Handle Shift/Ctrl Clicks (Existing Logic) ---
                           if (e.shiftKey && lastClickedCategoryIndex !== -1) {
                             const start = Math.min(lastClickedCategoryIndex, i); 
                             const end = Math.max(lastClickedCategoryIndex, i);
@@ -482,8 +632,6 @@ HTMLWidgets.widget({
                             else { activeSet = new Set([i]); globalRegistry.categorySelections.set(myVar, activeSet); }
                           }
                           lastClickedCategoryIndex = i;
-
-                          // --- 2. Update Internal Filters (Existing Logic) ---
                           const entry = globalRegistry.get(plotId);
                           const currentSelections = globalRegistry.categorySelections.get(myVar);
                           if (!currentSelections) { globalRegistry.indexFilters.delete(myVar); } 
@@ -495,29 +643,17 @@ HTMLWidgets.widget({
                               else if (entry.groupVar === myVar) buffer = entry.categoryData;
                               if (buffer) { for(let p=0; p<n; p++) { if (currentSelections.has(Math.round(buffer[p]))) { newIndexSet.add(p); } } globalRegistry.indexFilters.set(myVar, newIndexSet); } 
                           }
-                          
-                          // --- 3. Update Visuals (Existing Logic) ---
                           globalRegistry.forEach(entry => { if(entry.updateLegendUI) entry.updateLegendUI(); recalcAndApplyFilters(entry); });
-
-                          // --- [NEW] 4. Notify Shiny of Selection ---
                           if (window.Shiny && window.Shiny.setInputValue) {
                               const allowedIndices = currentSelections ? Array.from(currentSelections) : null;
                               let allowedNames = null;
-                              if (allowedIndices && legendData.names) {
-                                  // Map numeric indices back to strings (e.g. 0 -> "T-Cells")
-                                  allowedNames = allowedIndices.map(idx => legendData.names[idx]);
-                              }
-                              window.Shiny.setInputValue("legend_selection_change", {
-                                  variable: myVar,
-                                  allowed_names: allowedNames,
-                                  timestamp: Date.now()
-                              });
+                              if (allowedIndices && legendData.names) allowedNames = allowedIndices.map(idx => legendData.names[idx]);
+                              window.Shiny.setInputValue("legend_selection_change", { variable: myVar, allowed_names: allowedNames, timestamp: Date.now() });
                           }
                     };
                     row.appendChild(label); legendDiv.appendChild(row);
                 });
             } else if (legendData.var_type === 'continuous') {
-                 // ... [Continuous legend remains same] ...
                  const gradContainer = document.createElement('div');
                  gradContainer.style.cssText = 'display: flex; align-items: flex-start; margin-top: 5px;';
                  const grad = document.createElement('div');
@@ -532,28 +668,28 @@ HTMLWidgets.widget({
 
         const createDownloadButton = function(container) {
             const entry = globalRegistry.get(plotId);
-            // Get the CURRENT theme colors passed from R
-            const bg = entry.legendBg || 'white';
-            const txt = entry.legendText || '#333';
-            const border = (txt === '#333') ? '#ccc' : '#475569';
+            const bg = entry.legendBg || 'var(--bg-card, #ffffff)';
+            const txt = entry.legendText || 'var(--text-sub, #64748b)';
+            const border = (txt.includes('#333') || txt === '#333') ? 'var(--border-color, #ccc)' : 'var(--border-color, #475569)';
 
-            // 1. Check if wrapper exists
             let wrapper = container.querySelector('.dl-btn-container');
             
-            // 2. If NOT, create it
             if (!wrapper) {
                 wrapper = document.createElement('div');
                 wrapper.className = 'dl-btn-container';
-                wrapper.style.cssText = `position: absolute; top: 10px; left: 10px; z-index: 100;`;
-                
+                // CHANGED: Increased 'right' to 50px so it clears the scrollbar/edge
+                wrapper.style.cssText = `position: absolute; top: 10px; left: 10px; z-index: 90;`;                
                 const btn = document.createElement('div');
                 btn.className = 'sp-download-btn';
-                btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
                 
                 const menu = document.createElement('div');
                 menu.className = 'sp-menu';
+
+                // Ensure menu aligns with the left side of the button
+                menu.style.left = '0'; 
+                menu.style.right = 'auto';
                 
-                // Add menu items
                 ['PNG', 'SVG', 'PDF'].forEach(format => {
                     const item = document.createElement('div');
                     item.className = 'sp-menu-item';
@@ -570,7 +706,7 @@ HTMLWidgets.widget({
                 container.appendChild(wrapper);
             }
 
-            // 3. ALWAYS Update Styles (Fixes the dark mode toggle issue)
+            // Update Styles
             const btn = wrapper.querySelector('.sp-download-btn');
             const menu = wrapper.querySelector('.sp-menu');
             
@@ -581,16 +717,9 @@ HTMLWidgets.widget({
             }
             if (menu) {
                 menu.style.background = bg;
-                menu.style.color = txt;
                 menu.style.borderColor = border;
-                
-                // Update hover colors for menu items dynamically
                 const items = menu.querySelectorAll('.sp-menu-item');
-                items.forEach(item => {
-                    item.style.color = txt;
-                    item.onmouseenter = () => { item.style.backgroundColor = (txt === '#333') ? '#f0f7ff' : '#334155'; };
-                    item.onmouseleave = () => { item.style.backgroundColor = 'transparent'; };
-                });
+                items.forEach(item => item.style.color = txt);
             }
         };
         const renderElementToCanvas = async function(element) {
