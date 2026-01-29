@@ -322,32 +322,53 @@ HTMLWidgets.widget({
 
                 /* --- Draggable Legend Wrapper (Kept from previous step) --- */
                 .sp-legend-wrapper {
-                    position: absolute; z-index: 100; display: flex; flex-direction: column;
+                    position: absolute; 
+                    z-index: 999; /* Super high to prevent hiding behind other plots */
+                    display: flex; flex-direction: column;
                     background: var(--bg-card, rgba(255, 255, 255, 0.95));
                     border: 1px solid var(--border-color, #e2e8f0);
                     border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                     transition: opacity 0.2s, box-shadow 0.2s;
+                    
+                    /* AUTO WIDTH FIXES */
+                    width: fit-content !important;  /* Force fit content */
+                    min-width: 100px;               /* Prevent total collapse */
+                    max-width: 250px;               /* Prevent exaggeration */
                     max-height: 90%;
+                    overflow: hidden;
                 }
-                .sp-legend-wrapper.dragging { opacity: 0.9; box-shadow: 0 8px 24px rgba(0,0,0,0.2); cursor: move; }
+                
+                .sp-legend-wrapper.dragging { 
+                    opacity: 0.9; box-shadow: 0 8px 24px rgba(0,0,0,0.2); cursor: move; 
+                }
+                .sp-legend-wrapper.minimized { 
+                    width: auto !important; height: auto !important; 
+                }
                 .sp-legend-wrapper.minimized .sp-legend-content { display: none; }
+                
                 .sp-legend-header {
                     display: flex; align-items: center; justify-content: space-between;
                     padding: 6px 10px; border-bottom: 1px solid var(--border-color, #e2e8f0);
                     background: var(--bg-panel, rgba(245, 245, 245, 0.5));
                     border-radius: 8px 8px 0 0; cursor: move; user-select: none;
                     min-height: 28px;
+                    white-space: nowrap; /* Prevent header wrap */
                 }
                 .sp-legend-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-sub, #64748b); letter-spacing: 0.5px; }
+
                 .sp-legend-btn {
                     width: 20px; height: 20px; border: none; background: transparent;
                     color: var(--text-sub, #64748b); cursor: pointer; border-radius: 4px;
                     display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;
                 }
-                .sp-legend-btn:hover { background: rgba(0,0,0,0.05); color: var(--text-main, #333); }
+                
                 .sp-legend-content { padding: 8px; overflow-y: auto; max-height: 300px; }
-                .sp-legend { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-                .sp-legend-item { transition: opacity 0.2s; user-select: none; }
+                
+                .sp-legend-item { 
+                    transition: opacity 0.2s; user-select: none; 
+                    white-space: nowrap; /* CRITICAL: Prevent text wrapping resizing the box awkwardly */
+                    overflow: hidden; text-overflow: ellipsis;
+                }
                 .sp-legend-item:hover { background-color: rgba(0,0,0,0.03); border-radius: 4px; }
                 .sp-color-swatch { width: 14px; height: 14px; border-radius: 3px; margin-right: 8px; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.2); box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
                 .sp-loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; position: absolute; top: 50%; left: 50%; margin-top: -15px; margin-left: -15px; z-index: 50; display: none; }
@@ -443,10 +464,15 @@ HTMLWidgets.widget({
             if (!legendWrapper) {
                 legendWrapper = document.createElement('div');
                 legendWrapper.className = 'sp-legend-wrapper';
-                // Default position
+                // Explicitly set Right anchor
                 legendWrapper.style.top = '10px';
                 legendWrapper.style.right = '10px'; 
                 legendWrapper.style.left = 'auto'; 
+
+                // 1. Define crisp SVG icons
+                const iconMinus = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="3" fill="none"><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+                const iconPlus = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="3" fill="none"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+
                 
                 const header = document.createElement('div');
                 header.className = 'sp-legend-header';
@@ -464,22 +490,30 @@ HTMLWidgets.widget({
                 legendWrapper.appendChild(content);
                 container.appendChild(legendWrapper);
 
+                
+                // 2. Insert SVG initially
+                // header.innerHTML = `<span class="sp-legend-title">Legend</span>
+                //                     <button class="sp-legend-btn" title="Minimize">${iconMinus}</button>`;
+
                 const minBtn = header.querySelector('.sp-legend-btn');
                 minBtn.onclick = (e) => {
                     e.stopPropagation();
                     const isMin = legendWrapper.classList.toggle('minimized');
-                    minBtn.innerText = isMin ? '+' : '−';
+                    
+                    // 3. Swap SVGs on click
+                    minBtn.innerHTML = isMin ? iconPlus : iconMinus;
                 };
 
-                // --- FIX: Prevent resize calculation when tab is hidden ---
+                // --- IMPROVED RESIZE LOGIC ---
                 const keepInBounds = () => {
                     if (!legendWrapper || legendWrapper.style.display === 'none') return;
-
-                    // CRITICAL FIX: If width is 0 (hidden tab), STOP. 
-                    // Otherwise it calculates 'maxLeft' as negative and forces 'left' to 0.
                     if (container.clientWidth === 0 || container.clientHeight === 0) return;
-                    
-                    // Only apply clamping if we are using 'left' positioning (meaning it was dragged)
+
+                    // 1. FORCE BROWSER REPAINT (Fixes "Not Auto Width" / "Ghost" issues)
+                    // We toggle a negligible transform to force layer recalculation
+                    legendWrapper.style.transform = 'translateZ(0)';
+
+                    // 2. CLAMP POSITION (Only if dragged)
                     if (legendWrapper.style.left && legendWrapper.style.left !== 'auto') {
                         const maxLeft = container.clientWidth - legendWrapper.offsetWidth;
                         const maxTop = container.clientHeight - legendWrapper.offsetHeight;
@@ -497,42 +531,48 @@ HTMLWidgets.widget({
 
                 const ro = new ResizeObserver(keepInBounds);
                 ro.observe(container);
-                ro.observe(legendWrapper);
+                ro.observe(legendWrapper); // Observe itself too!
 
-                // --- Drag Logic ---
+                // --- SMART DRAG LOGIC ---
                 let isDragging = false;
-                let startX, startY, initialRight, initialTop;
+                let hasMoved = false; 
+                let startX, startY, initialLeft, initialTop;
 
                 header.onmousedown = (e) => {
                     if (e.target.tagName === 'BUTTON') return;
                     e.preventDefault();
                     isDragging = true;
-                    legendWrapper.classList.add('dragging');
-                    
+                    hasMoved = false;
                     startX = e.clientX;
                     startY = e.clientY;
-                    
-                    const rect = legendWrapper.getBoundingClientRect();
-                    const containerRect = container.getBoundingClientRect();
-                    const offsetLeft = rect.left - containerRect.left;
-                    const offsetTop = rect.top - containerRect.top;
-                    
-                    // Switch to explicit left/top positioning on first drag
-                    legendWrapper.style.right = 'auto';
-                    legendWrapper.style.left = offsetLeft + 'px';
-                    legendWrapper.style.top = offsetTop + 'px';
-                    
-                    initialTop = offsetTop;
-                    initialRight = offsetLeft;
                 };
 
                 const onMove = (e) => {
                     if (!isDragging) return;
+
                     const dx = e.clientX - startX;
                     const dy = e.clientY - startY;
-                    let newLeft = initialRight + dx;
-                    let newTop = initialTop + dy;
                     
+                    // Threshold to prevent accidental moves on click
+                    if (!hasMoved && Math.sqrt(dx*dx + dy*dy) < 5) return;
+
+                    if (!hasMoved) {
+                        hasMoved = true;
+                        legendWrapper.classList.add('dragging');
+                        const rect = legendWrapper.getBoundingClientRect();
+                        const containerRect = container.getBoundingClientRect();
+                        
+                        // Switch from "Right" anchor to explicit "Left" coords
+                        initialLeft = rect.left - containerRect.left;
+                        initialTop = rect.top - containerRect.top;
+                        
+                        legendWrapper.style.right = 'auto';
+                        legendWrapper.style.left = initialLeft + 'px';
+                        legendWrapper.style.top = initialTop + 'px';
+                    }
+
+                    let newLeft = initialLeft + dx;
+                    let newTop = initialTop + dy;
                     const maxLeft = container.clientWidth - legendWrapper.offsetWidth;
                     const maxTop = container.clientHeight - legendWrapper.offsetHeight;
                     
@@ -541,10 +581,8 @@ HTMLWidgets.widget({
                 };
 
                 const onUp = () => {
-                    if (isDragging) {
-                        isDragging = false;
-                        legendWrapper.classList.remove('dragging');
-                    }
+                    isDragging = false;
+                    if (legendWrapper) legendWrapper.classList.remove('dragging');
                 };
                 
                 document.addEventListener('mousemove', onMove);
@@ -562,7 +600,6 @@ HTMLWidgets.widget({
             legendDiv.innerHTML = '';
             legendDiv.style.fontSize = fontSize + 'px';
 
-            // ... [Keep Categorical/Continuous population logic below] ...
             if (legendData.var_type === 'categorical') {
                 if (!Array.isArray(legendData.names)) legendData.names = [legendData.names];
                 if (!Array.isArray(legendData.colors)) legendData.colors = [legendData.colors];
