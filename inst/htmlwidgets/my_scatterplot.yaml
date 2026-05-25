@@ -1,5 +1,0 @@
-name: my_scatterplot
-version: 1.0.0
-title: Interactive Scatterplot Widget
-description: A scalable scatterplot using regl-scatterplot with multi-sync support
-license: MIT

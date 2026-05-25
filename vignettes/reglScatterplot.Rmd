@@ -1,0 +1,164 @@
+---
+title: "Interactive WebGL Scatterplots with reglScatterplot"
+author: "George Muñoz"
+date: "`r Sys.Date()`"
+package: reglScatterplot
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Interactive WebGL Scatterplots with reglScatterplot}
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>",
+    fig.align = "center",
+    eval = FALSE
+)
+```
+
+# Introduction
+
+`reglScatterplot` is a thin R wrapper around the JavaScript
+[regl-scatterplot](https://github.com/flekschas/regl-scatterplot) library,
+exposing it as an `htmlwidgets` widget. It renders **millions** of
+two-dimensional points in the browser via WebGL, which makes it well suited
+to:
+
+* single-cell RNA-seq UMAP/t-SNE embeddings,
+* spatial transcriptomics tissue maps,
+* high-dimensional flow / mass cytometry projections,
+* any large `(x, y)` scatter that ggplot2 would draw too slowly.
+
+The widget works in:
+
+* the **RStudio Viewer** pane when run interactively,
+* **standalone HTML** files produced by `htmlwidgets::saveWidget()`,
+* **Shiny** applications and interactive R Markdown documents,
+* **Jupyter notebooks** running the `IRkernel` (e.g. VSCode's Jupyter extension).
+
+# Installation
+
+```{r install, eval = FALSE}
+# From GitHub
+remotes::install_github("george123ya/reglScatterplotR")
+
+# Once accepted into Bioconductor
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("reglScatterplot")
+```
+
+```{r library}
+library(reglScatterplot)
+```
+
+# A first plot
+
+The simplest call needs only a `data.frame` and the names of the two
+coordinate columns.
+
+```{r basic}
+set.seed(1L)
+df <- data.frame(
+    x = rnorm(20000),
+    y = rnorm(20000),
+    cluster = sample(letters[1:6], 20000, replace = TRUE),
+    score   = runif(20000)
+)
+
+reglScatterplot(df, x = "x", y = "y")
+```
+
+# Categorical colour mapping
+
+Pass a character or factor column name (or vector) to `colorBy`. A draggable
+legend appears in the upper-right corner of the plot; clicking a legend
+entry filters the data, and shift/ctrl-click extends the selection.
+
+```{r categorical}
+reglScatterplot(df, x = "x", y = "y", colorBy = "cluster",
+                legendTitle = "Cluster")
+```
+
+# Continuous colour mapping
+
+Numeric `colorBy` produces a continuous colour scale. Use `vmin`/`vmax`
+to clip outliers; the strings `"p1"`, `"p99"` and so on select percentiles.
+
+```{r continuous}
+reglScatterplot(df, x = "x", y = "y", colorBy = "score",
+                continuousPalette = "magma",
+                vmin = "p1", vmax = "p99")
+```
+
+For log-fold-change-style data use `centerZero = TRUE` to force a symmetric
+diverging scale.
+
+# Working with Bioconductor data structures
+
+`reglScatterplot()` accepts any `data.frame`-like object. To plot a UMAP
+embedding stored in a `SingleCellExperiment`, build a small data frame from
+its `reducedDim()` and `colData()` slots:
+
+```{r sce, eval = FALSE}
+library(SingleCellExperiment)
+umap <- reducedDim(sce, "UMAP")
+df <- data.frame(
+    UMAP1 = umap[, 1L],
+    UMAP2 = umap[, 2L],
+    cluster = colData(sce)$cluster,
+    nGene   = colData(sce)$detected
+)
+reglScatterplot(df, x = "UMAP1", y = "UMAP2",
+                colorBy = "cluster",
+                pointLabels = colnames(sce))
+```
+
+# Linking plots in Shiny
+
+When several `reglScatterplot()` widgets share the same `plotId`s, you can
+synchronise pan/zoom across them with `enableReglScatterplotSync()`:
+
+```{r sync, eval = FALSE}
+library(shiny)
+ui <- fluidPage(
+    fluidRow(
+        column(6, reglScatterplotOutput("plotA")),
+        column(6, reglScatterplotOutput("plotB"))
+    ),
+    actionButton("link", "Link cameras")
+)
+server <- function(input, output, session) {
+    output$plotA <- renderReglScatterplot({
+        reglScatterplot(df, x = "x", y = "y", colorBy = "cluster",
+                        plotId = "plotA")
+    })
+    output$plotB <- renderReglScatterplot({
+        reglScatterplot(df, x = "x", y = "y", colorBy = "score",
+                        plotId = "plotB")
+    })
+    observeEvent(input$link, {
+        enableReglScatterplotSync(c("plotA", "plotB"))
+    })
+}
+shinyApp(ui, server)
+```
+
+# Network requirements
+
+On first use the JavaScript bundles (`d3`, `regl-scatterplot`, `pickr`,
+`html2canvas`, `jsPDF`) are loaded from a CDN (`esm.sh` and
+`cdnjs.cloudflare.com`). Once loaded they are cached by the browser. A
+helpful error message is displayed in-place if the network is unavailable.
+
+# Session info
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```

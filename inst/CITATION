@@ -1,0 +1,23 @@
+citHeader("To cite the reglScatterplot R package, please use:")
+
+bibentry(
+    bibtype = "Manual",
+    title   = "reglScatterplot: Interactive WebGL Scatterplots for Biological Data Exploration",
+    author  = person("George", "Muñoz"),
+    year    = format(Sys.Date(), "%Y"),
+    note    = sprintf("R package version %s",
+                      utils::packageVersion("reglScatterplot")),
+    url     = "https://github.com/george123ya/reglScatterplotR"
+)
+
+bibentry(
+    bibtype  = "Misc",
+    title    = "regl-scatterplot: A WebGL-Powered Scatter Plot Renderer",
+    author   = person("Fritz", "Lekschas"),
+    year     = "2023",
+    url      = "https://github.com/flekschas/regl-scatterplot",
+    textVersion = paste(
+        "Lekschas, F. (2023). regl-scatterplot: A WebGL-Powered Scatter Plot",
+        "Renderer. https://github.com/flekschas/regl-scatterplot"
+    )
+)

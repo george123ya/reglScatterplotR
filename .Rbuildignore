@@ -1,0 +1,17 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.github$
+^\.gitignore$
+^\.DS_Store$
+^README\.Rmd$
+^doc$
+^Meta$
+^docs$
+^pkgdown$
+^_pkgdown\.yml$
+^cran-comments\.md$
+^CRAN-RELEASE$
+^codecov\.yml$
+^LICENSE\.md$
+^dev$
+^wiki$

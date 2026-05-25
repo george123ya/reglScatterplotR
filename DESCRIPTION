@@ -1,14 +1,48 @@
 Package: reglScatterplot
 Type: Package
-Title: A Regl-Scatterplot Wrapper
-Version: 0.1.0
-Authors@R: person("George", "Muñoz", email = "gmunoz@rockefeller.edu", role = c("aut", "cre"))
-Description: An R package to create interactive scatterplots using the regl-scatterplot JavaScript library.
+Title: Interactive WebGL Scatterplots for Biological Data Exploration
+Version: 0.99.0
+Date: 2026-05-25
+Authors@R:
+    person(given = "George", family = "Muñoz",
+           email = "gmunoz@rockefeller.edu",
+           role = c("aut", "cre"))
+Description: Lightweight 'htmlwidgets' interface to the JavaScript
+    'regl-scatterplot' library, rendering millions of two-dimensional points
+    in the browser via WebGL. Designed for exploratory visualisation of
+    single-cell, spatial transcriptomics and other high-dimensional
+    biological data. Features include synchronised pan/zoom across multiple
+    plots, categorical and continuous colour mapping, lasso selection, range
+    and category filtering, PNG/SVG/PDF export, and Shiny integration. The
+    widget works in the 'RStudio' Viewer, standalone HTML files, Shiny
+    applications and Jupyter notebooks running the 'IRkernel'.
 License: MIT + file LICENSE
+URL: https://github.com/george123ya/reglScatterplotR
+BugReports: https://github.com/george123ya/reglScatterplotR/issues
 Encoding: UTF-8
-Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
+biocViews: Software, Visualization, SingleCell, GeneExpression,
+    Transcriptomics, DimensionReduction, ShinyApps
+Depends:
+    R (>= 4.4.0)
 Imports:
     htmlwidgets,
+    base64enc,
+    jsonlite,
     viridisLite,
-    RColorBrewer
+    RColorBrewer,
+    grDevices,
+    stats,
+    shiny
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    markdown,
+    BiocStyle,
+    SingleCellExperiment,
+    SpatialExperiment,
+    SummarizedExperiment
+VignetteBuilder: knitr
+Roxygen: list(markdown = TRUE)
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0

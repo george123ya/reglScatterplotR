@@ -1,0 +1,185 @@
+---
+title: "reglScatterplot — Bioconductor integration tour"
+author: "George Muñoz"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    df_print: paged
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,
+    warning = FALSE,
+    message = FALSE
+)
+```
+
+This notebook exercises every Bioconductor-class path the package supports.
+Run it cell-by-cell in RStudio (Run > Run All) or in VSCode with the R
+Jupyter kernel. All synthetic data — no downloads, no internet (apart from
+the regl-scatterplot CDN dependency the widget always uses).
+
+# Setup
+
+```{r packages}
+library(reglScatterplot)
+suppressPackageStartupMessages({
+    library(SingleCellExperiment)
+    library(SummarizedExperiment)
+    if (requireNamespace("SpatialExperiment", quietly = TRUE)) {
+        library(SpatialExperiment)
+    }
+})
+packageVersion("reglScatterplot")
+```
+
+# Synthetic SingleCellExperiment
+
+A small fake scRNA-seq object: 5 000 cells × 200 genes, with 8 clusters
+arranged on a plausibly-clustered UMAP.
+
+```{r sce-build}
+set.seed(1L)
+n_cells <- 5000L
+n_genes <- 200L
+
+counts <- matrix(rpois(n_genes * n_cells, lambda = 1.5),
+                 nrow = n_genes, ncol = n_cells)
+rownames(counts) <- paste0("Gene", seq_len(n_genes))
+colnames(counts) <- paste0("Cell", seq_len(n_cells))
+
+logc <- log2(counts + 1)
+
+sce <- SingleCellExperiment(
+    assays = list(counts = counts, logcounts = logc),
+    colData = DataFrame(
+        cluster = factor(sample(paste0("c", 1:8), n_cells, replace = TRUE)),
+        depth   = colSums(counts),
+        mito_pct = runif(n_cells, 0, 25)
+    )
+)
+
+## Plausibly-clustered UMAP
+mu <- matrix(rnorm(16, sd = 5), nrow = 8L, ncol = 2L)
+clust_ix <- as.integer(sce$cluster)
+umap <- mu[clust_ix, ] + matrix(rnorm(2L * n_cells, sd = 0.5), ncol = 2L)
+reducedDim(sce, "UMAP") <- umap
+
+sce
+```
+
+# Categorical colouring — cluster label
+
+```{r sce-cluster}
+reglScatterplot(sce,
+                x = "UMAP",
+                colorBy = "cluster",
+                title = "UMAP coloured by cluster",
+                height = 500)
+```
+
+# Continuous colouring — sequencing depth
+
+`vmin = "p1"` / `vmax = "p99"` clips outliers so the palette gradient
+remains useful when a few cells dominate.
+
+```{r sce-depth}
+reglScatterplot(sce,
+                x = "UMAP",
+                colorBy = "depth",
+                continuousPalette = "magma",
+                vmin = "p1", vmax = "p99",
+                title = "Sequencing depth",
+                height = 500)
+```
+
+# Gene-expression colouring
+
+When `colorBy` matches a row name of the SCE, values are pulled from the
+`logcounts` assay automatically. The `assay` argument can override which
+assay to read from.
+
+```{r sce-gene}
+reglScatterplot(sce,
+                x = "UMAP",
+                colorBy = "Gene12",        # any rowname works
+                continuousPalette = "viridis",
+                title = "Gene12 (log-normalised)",
+                height = 500)
+```
+
+# Combining categorical color + group filter
+
+Pass `groupBy` to expose a second filter dimension in the legend.
+
+```{r sce-group}
+reglScatterplot(sce,
+                x = "UMAP",
+                colorBy = "cluster",
+                groupBy = "cluster",  # could be a different colData column
+                height = 500)
+```
+
+# SpatialExperiment — tissue coordinates
+
+Skipped automatically when `SpatialExperiment` isn't installed.
+
+```{r spe, eval = requireNamespace("SpatialExperiment", quietly = TRUE)}
+spe <- SpatialExperiment(
+    assays = list(counts = counts),
+    colData = DataFrame(spot_type = sce$cluster),
+    spatialCoords = umap            # stand-in for real tissue coords
+)
+reglScatterplot(spe,
+                x = "spatial",
+                colorBy = "spot_type",
+                title = "Spatial map (SpatialExperiment)",
+                height = 500)
+```
+
+# Custom palettes
+
+```{r palettes}
+mypal <- c("#1b9e77", "#d95f02", "#7570b3", "#e7298a",
+           "#66a61e", "#e6ab02", "#a6761d", "#666666")
+reglScatterplot(sce,
+                x = "UMAP",
+                colorBy = "cluster",
+                customPalette = mypal,
+                legendTitle = "Cluster",
+                height = 500)
+```
+
+# Stress test — same SCE pipeline at higher density
+
+```{r big-sce}
+big_n <- 200000L
+big_counts <- matrix(rpois(20L * big_n, lambda = 1), nrow = 20L)
+rownames(big_counts) <- paste0("g", seq_len(20L))
+big_logc <- log2(big_counts + 1)
+big_sce <- SingleCellExperiment(
+    assays = list(logcounts = big_logc),
+    colData = DataFrame(
+        cluster = factor(sample(letters[1:12], big_n, replace = TRUE))
+    )
+)
+big_mu <- matrix(rnorm(24, sd = 6), 12L, 2L)
+big_umap <- big_mu[as.integer(big_sce$cluster), ] +
+    matrix(rnorm(2L * big_n, sd = 0.4), ncol = 2L)
+reducedDim(big_sce, "UMAP") <- big_umap
+
+reglScatterplot(big_sce,
+                x = "UMAP",
+                colorBy = "cluster",
+                title = "200k cells",
+                height = 500)
+```
+
+# Session info
+
+```{r sessioninfo}
+sessionInfo()
+```

@@ -1,0 +1,162 @@
+---
+title: "Scaling reglScatterplot to millions of points"
+author: "George Muñoz"
+date: "`r Sys.Date()`"
+package: reglScatterplot
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Scaling reglScatterplot to millions of points}
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>",
+    eval = FALSE
+)
+```
+
+# What works at what scale
+
+`reglScatterplot()` was designed for the size of typical single-cell and
+spatial datasets, but it can push well past that.
+
+| Point count       | Status       | Notes                                                         |
+|------------------:|:-------------|:--------------------------------------------------------------|
+| 1 - 500 000       | Flawless     | Below the auto performance-mode threshold; full interactivity |
+| 500 k - 5 M       | Smooth       | `performanceMode` kicks in automatically                      |
+| 5 M - 20 M        | Usable       | Use `pointSize = 1`, `opacity = 1`, drop `pointLabels`         |
+| 20 M - 100 M      | Standalone HTML reaches RAM ceiling | Tile-based architectures (e.g. deepscatter) start to win |
+| > 100 M           | Out of reach in-browser            | Server-side rendering / WebGPU territory                  |
+
+# How the wire format works
+
+To keep large datasets shippable inside a standalone `htmlwidget`, every
+numeric channel is binary-encoded and base64-wrapped before transit:
+
+| Channel                | Encoder                  | Precision        | Bytes / point |
+|------------------------|--------------------------|------------------|--------------:|
+| X / Y (normalised)     | `.toBase64U16()`         | 1 / 32 767       |             2 |
+| Continuous color z     | `.toBase64U16Unit()`     | 1 / 65 535       |             2 |
+| Categorical color z    | `.toBase64U16Int()`      | exact (< 65 536) |             2 |
+| Filter ranges          | `toBase64()` (Float32)   | full f32         |             4 |
+
+At 10 M points the resulting HTML file is around 80 - 90 MB - large but
+finite. The same data with Float32 everywhere would be ~150 MB.
+
+# A benchmark you can run yourself
+
+```{r bench}
+library(reglScatterplot)
+
+bench_sizes <- c(1e4, 1e5, 1e6, 5e6)
+for (n in bench_sizes) {
+    df <- data.frame(x = rnorm(n), y = rnorm(n), v = runif(n))
+    t0 <- Sys.time()
+    w  <- reglScatterplot(df, x = "x", y = "y", colorBy = "v",
+                          height = 600)
+    payload <- htmlwidgets:::toJSON(w$x)
+    cat(sprintf("n = %s : build = %.2fs, payload = %.1f MB\n",
+                format(n, big.mark = ","),
+                as.numeric(Sys.time() - t0, units = "secs"),
+                nchar(payload) / 1024 / 1024))
+    rm(df, w, payload); gc(verbose = FALSE)
+}
+```
+
+On a 2020-era laptop with an RTX 2060, 5 M points takes ~1.5s on the R side
+and another ~2s for the browser to parse and upload to the GPU; pan/zoom
+then runs at 60 fps.
+
+# Sizing inside the host viewport
+
+The widget honours an explicit pixel `height` verbatim. If the value
+exceeds the height of the host window (small browser tab, RStudio Viewer
+in a tiling WM, narrow Jupyter notebook column, etc.), the bottom of
+the canvas is clipped by the host - not by `reglScatterplot`.
+
+```{r sizing, eval = FALSE}
+# Bad in small viewports: a 500 px tall widget overflows a 450 px window.
+reglScatterplot(df, x = "x", y = "y", height = 500)
+
+# Good: fill whatever vertical space is available.
+reglScatterplot(df, x = "x", y = "y", height = "100%")
+
+# Also good: omit `height` entirely - the sizingPolicy fills the viewer pane.
+reglScatterplot(df, x = "x", y = "y")
+```
+
+Knitting to HTML produces a full-page document where the widget can take
+as much height as you give it, so the same code that clips in the Viewer
+pane prints cleanly in a knit report. This is purely a viewport effect.
+
+# Memory levers for very large data
+
+When you really want to push past 5 M, every per-point byte counts.
+Suggested defaults for huge inputs:
+
+```{r huge, eval = FALSE}
+reglScatterplot(huge_df,
+    x = "x", y = "y",
+    pointSize = 1,            # one pixel per point
+    opacity = 1,              # no blending math
+    showAxes = FALSE,         # drops the D3 axis layer
+    showTooltip = FALSE,      # frees per-point hit-test work
+    enableDownload = FALSE,   # no html2canvas / jsPDF download
+    pointLabels = NULL        # don't ship gene names
+)
+```
+
+Things you might think help but don't:
+* Reducing `vmin` / `vmax` clip range - colour scale only, not memory.
+* Setting `legendPosition = "bottom-left"` - cosmetic, no perf impact.
+
+# Comparison with other R packages
+
+`reglScatterplot` is one of three credible options for high-volume scatter
+in R. They aren't doing the same thing:
+
+| Package         | Interactive? | Best at                              | Limit                        |
+|-----------------|:------------:|--------------------------------------|------------------------------|
+| `reglScatterplot` | Yes        | 1 - 20 M points in HTML / Shiny       | Browser RAM / VRAM           |
+| `plotly` (+ `toWebGL()`) | Yes | < 500 k points, broad feature set    | JSON payload bloats past 1 M |
+| `scattermore`   | No (static)  | Quickly rasterising 10 M+ to a PNG    | No pan / zoom interactivity  |
+| `ggplot2`       | No (static)  | Publication graphics, small data      | Practical ceiling ~50 k pts  |
+
+The right choice depends on what you need:
+
+* Want a printable figure? `ggplot2` or `scattermore`.
+* Want to embed an interactive plot in an HTML report? `reglScatterplot`.
+* Need brush, click, and faceted layouts more than scale? `plotly`.
+
+# Where the next jump comes from
+
+For genuinely huge data (multi-modal CosMx slides, whole-atlas integrations
+beyond ~50 M cells), no in-browser library is the right answer today. The
+viable paths are:
+
+1. **Tile-based architectures** - precompute spatial tiles on disk, only
+   load what the viewport needs. See `deepscatter` (Apache Arrow + Parquet
+   tiles). Requires a server or a static tile directory.
+2. **Server-side rendering** - send camera state to a Python / Julia
+   backend that renders frames; stream them as images. Lower fidelity but
+   independent of the client.
+3. **WebGPU** - browser support is maturing; offers compute shaders that
+   would let us do GPU-side filtering and density binning. Currently a
+   two-year horizon.
+
+For now, `reglScatterplot` covers the typical single-cell, spatial and
+fold-change use cases comfortably. If you find yourself loading the same
+10 M+ dataset repeatedly, the right next step is to switch to a tile
+server, not a faster scatterplot.
+
+# Session info
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```

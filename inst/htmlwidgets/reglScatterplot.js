@@ -1,4 +1,13 @@
 // ============================================================================
+// reglScatterplot widget
+// Wrapped in an IIFE so re-loading the script (which Jupyter / IRkernel do
+// on every cell render) doesn't throw "Identifier already declared" for the
+// top-level `const` bindings. Shared state lives on `window.__myScatterplotRegistry`.
+// ============================================================================
+(function () {
+'use strict';
+
+// ============================================================================
 // MULTI-SYNC REGISTRY (COMMITTEE MODEL)
 // ============================================================================
 if (!window.__myScatterplotRegistry) {
@@ -34,11 +43,44 @@ const cloneCamera = (cam) => {
 
 const decodeBase64 = (base64Str) => {
     if (!base64Str) return null;
-    if (typeof base64Str === 'string' && base64Str.startsWith('base64:')) {
-        const raw = atob(base64Str.slice(7));
+    if (typeof base64Str !== 'string') return new Float32Array(base64Str);
+
+    // Helper: base64 string -> Uint8Array.
+    const _b64ToBytes = (s) => {
+        const raw = atob(s);
         const len = raw.length;
         const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) { bytes[i] = raw.charCodeAt(i); }
+        for (let i = 0; i < len; i++) bytes[i] = raw.charCodeAt(i);
+        return bytes;
+    };
+
+    // Bipolar Uint16 -> [-1, 1] Float32 (X / Y coordinates).
+    if (base64Str.startsWith('base64u16:')) {
+        const bytes = _b64ToBytes(base64Str.slice(10));
+        const u16 = new Uint16Array(bytes.buffer);
+        const out = new Float32Array(u16.length);
+        const inv = 1 / 32767.5;
+        for (let i = 0; i < u16.length; i++) out[i] = u16[i] * inv - 1;
+        return out;
+    }
+    // Unit Uint16 -> [0, 1] Float32 (continuous colour z).
+    if (base64Str.startsWith('base64u16u:')) {
+        const bytes = _b64ToBytes(base64Str.slice(11));
+        const u16 = new Uint16Array(bytes.buffer);
+        const out = new Float32Array(u16.length);
+        const inv = 1 / 65535;
+        for (let i = 0; i < u16.length; i++) out[i] = u16[i] * inv;
+        return out;
+    }
+    // Integer Uint16 -> Float32 (categorical colour / group indices).
+    if (base64Str.startsWith('base64u16i:')) {
+        const bytes = _b64ToBytes(base64Str.slice(11));
+        const u16 = new Uint16Array(bytes.buffer);
+        return Float32Array.from(u16);
+    }
+    // Float32 payload (legacy / non-normalised channels like filter ranges).
+    if (base64Str.startsWith('base64:')) {
+        const bytes = _b64ToBytes(base64Str.slice(7));
         return new Float32Array(bytes.buffer);
     }
     return new Float32Array(base64Str);
@@ -259,13 +301,26 @@ if (typeof Shiny !== 'undefined') {
 }
 
 HTMLWidgets.widget({
-    name: 'my_scatterplot',
+    name: 'reglScatterplot',
     type: 'output',
     factory: function(el, width, height) {
         const container = el;
         container.style.position = 'relative';
-        container.style.overflow = 'hidden'; 
+        container.style.overflow = 'hidden';
         container.style.backgroundColor = 'transparent';
+        // Anchor the font stack on the container so SVG ticks and the
+        // legend body inherit the same family regardless of the host shell.
+        container.style.fontFamily =
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+        // Mutable copies so resize() can update them and the rest of the
+        // closure reads live dimensions instead of the initial factory values.
+        let widgetWidth  = width;
+        let widgetHeight = height;
+        let prevNumPoints = 0;
+        // Forward-declared so the ResizeObserver can call into the public
+        // resize() handler without needing HTMLWidgets.find().
+        let instanceResize = null;
 
         let currentAxisColor = '#333333';
 
@@ -282,7 +337,7 @@ HTMLWidgets.widget({
                     border-radius: 6px;
                     padding: 5px 10px;
                     cursor: pointer;
-                    font-family: 'Inter', sans-serif;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif;
                     font-size: 12px;
                     font-weight: 500;
                     color: var(--text-sub, #64748b);
@@ -311,7 +366,7 @@ HTMLWidgets.widget({
                 }
                 .sp-menu-item {
                     display: block; width: 100%; text-align: left; padding: 6px 10px;
-                    font-size: 12px; font-family: 'Inter', sans-serif;
+                    font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif;
                     color: var(--text-sub, #64748b); cursor: pointer;
                     border-radius: 4px; transition: all 0.15s;
                 }
@@ -320,12 +375,32 @@ HTMLWidgets.widget({
                     color: var(--accent, #3b82f6);
                 }
 
+                /* --- Force sans-serif on SVG text against host-injected CSS. --- */
+                .html-widget svg text,
+                .html-widget svg .tick text,
+                .html-widget svg .x-label,
+                .html-widget svg .y-label {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+                }
+
                 /* --- Draggable Legend Wrapper (Kept from previous step) --- */
+                .sp-legend-wrapper,
+                .sp-legend-wrapper *,
+                .sp-legend-header,
+                .sp-legend-title,
+                .sp-legend-content,
+                .sp-legend,
+                .sp-legend-item {
+                    /* !important is needed because RStudio's Qt webview injects
+                       its own stylesheet that otherwise wins the specificity
+                       fight and forces a serif default. */
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+                }
                 .sp-legend-wrapper {
-                    position: absolute; 
+                    position: absolute;
                     z-index: 999; /* Super high to prevent hiding behind other plots */
                     display: flex; flex-direction: column;
-                    background: var(--bg-card, rgba(255, 255, 255, 0.95));
+                    background: var(--bg-card, #ffffff);
                     border: 1px solid var(--border-color, #e2e8f0);
                     border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                     transition: opacity 0.2s, box-shadow 0.2s;
@@ -349,7 +424,7 @@ HTMLWidgets.widget({
                 .sp-legend-header {
                     display: flex; align-items: center; justify-content: space-between;
                     padding: 6px 10px; border-bottom: 1px solid var(--border-color, #e2e8f0);
-                    background: var(--bg-panel, rgba(245, 245, 245, 0.5));
+                    background: var(--bg-panel, #f8fafc);
                     border-radius: 8px 8px 0 0; cursor: move; user-select: none;
                     min-height: 28px;
                     white-space: nowrap; /* Prevent header wrap */
@@ -415,6 +490,11 @@ HTMLWidgets.widget({
         let isInitialRender = true;
         let resizeObserver = null;
         let lastClickedCategoryIndex = -1;
+        // Set true while we're issuing camera changes programmatically
+        // (resize, autoAdjustZoom, sync). The 'view' subscriber checks this
+        // before flipping `cameraTouched` so we don't mistake our own
+        // programmatic updates for user interaction.
+        let suppressTouchedFlip = false;
         let totalCategories = 0;
         let filterBuffers = {}; 
         const VECTOR_POINT_LIMIT = 200000;
@@ -464,10 +544,28 @@ HTMLWidgets.widget({
             if (!legendWrapper) {
                 legendWrapper = document.createElement('div');
                 legendWrapper.className = 'sp-legend-wrapper';
-                // Explicitly set Right anchor
-                legendWrapper.style.top = '10px';
-                legendWrapper.style.right = '10px'; 
-                legendWrapper.style.left = 'auto'; 
+                // Apply the configured anchor (defaults to top-right).
+                const anc = (entry.legendAnchor && entry.legendAnchor.anchor) || 'top-right';
+                legendWrapper.style.top = 'auto';
+                legendWrapper.style.bottom = 'auto';
+                legendWrapper.style.left = 'auto';
+                legendWrapper.style.right = 'auto';
+                if (anc === 'custom') {
+                    legendWrapper.style.left = (entry.legendAnchor.x || 10) + 'px';
+                    legendWrapper.style.top  = (entry.legendAnchor.y || 10) + 'px';
+                } else if (anc === 'top-left') {
+                    legendWrapper.style.top = '10px';
+                    legendWrapper.style.left = '10px';
+                } else if (anc === 'bottom-right') {
+                    legendWrapper.style.bottom = '10px';
+                    legendWrapper.style.right  = '10px';
+                } else if (anc === 'bottom-left') {
+                    legendWrapper.style.bottom = '10px';
+                    legendWrapper.style.left   = '10px';
+                } else {
+                    legendWrapper.style.top   = '10px';
+                    legendWrapper.style.right = '10px';
+                }
 
                 // 1. Define crisp SVG icons
                 const iconMinus = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="3" fill="none"><line x1="5" y1="12" x2="19" y2="12"/></svg>';
@@ -540,12 +638,16 @@ HTMLWidgets.widget({
 
                 header.onmousedown = (e) => {
                     if (e.target.tagName === 'BUTTON') return;
+                    if (entry.draggableLegend === false) return;
                     e.preventDefault();
                     isDragging = true;
                     hasMoved = false;
                     startX = e.clientX;
                     startY = e.clientY;
                 };
+                if (entry.draggableLegend === false) {
+                    header.style.cursor = 'default';
+                }
 
                 const onMove = (e) => {
                     if (!isDragging) return;
@@ -843,7 +945,7 @@ HTMLWidgets.widget({
             if(d.title) {
                 const t = document.createElementNS(svgNS, 'text');
                 t.setAttribute('x', 65); t.setAttribute('y', 20); t.setAttribute('text-anchor', 'middle'); 
-                t.setAttribute('font-family', 'sans-serif'); t.setAttribute('font-weight', 'bold'); t.setAttribute('font-size', '12'); 
+                t.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif'); t.setAttribute('font-weight', 'bold'); t.setAttribute('font-size', '12'); 
                 t.textContent = d.title; g.appendChild(t);
             }
             if (d.var_type === 'categorical') {
@@ -861,7 +963,7 @@ HTMLWidgets.widget({
                     group.appendChild(c);
                     const txt = document.createElementNS(svgNS, 'text');
                     txt.setAttribute('x', 30); txt.setAttribute('y', y);
-                    txt.setAttribute('font-family', 'sans-serif'); txt.setAttribute('font-size', '11');
+                    txt.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif'); txt.setAttribute('font-size', '11');
                     txt.textContent = n; group.appendChild(txt);
                     g.appendChild(group);
                 });
@@ -881,7 +983,7 @@ HTMLWidgets.widget({
                 [d.maxVal, d.midVal, d.minVal].forEach((v, i) => {
                     const txt = document.createElementNS(svgNS, 'text');
                     txt.setAttribute('x', 35); txt.setAttribute('y', 45 + i*45);
-                    txt.setAttribute('font-family', 'sans-serif'); txt.setAttribute('font-size', '11');
+                    txt.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif'); txt.setAttribute('font-size', '11');
                     txt.textContent = v.toFixed(2); g.appendChild(txt);
                 });
             }
@@ -1009,7 +1111,7 @@ HTMLWidgets.widget({
             const a = document.createElement('a'); a.href = url; a.download = 'scatterplot.svg'; a.click(); URL.revokeObjectURL(url);
         };
 
-        return {
+        const instance = {
             renderValue: async function(xData) {
                 console.log("[SP-DEBUG] renderValue called for:", xData.plotId);
 
@@ -1076,7 +1178,17 @@ HTMLWidgets.widget({
                 if (dataBuffers.x && dataBuffers.z && dataBuffers.z.length > dataBuffers.x.length) dataBuffers.z = dataBuffers.z.subarray(0, dataBuffers.x.length);
 
                 if (svg) { svg.remove(); svg=null; }
-                if (typeof d3 === 'undefined') { window.d3 = await import('https://esm.sh/d3@7'); d3Available = true; } else d3Available = true;
+                if (typeof d3 === 'undefined') {
+                    try {
+                        window.d3 = await import('https://esm.sh/d3@7');
+                        d3Available = true;
+                    } catch (err) {
+                        console.error('[reglScatterplot] failed to load d3 from CDN', err);
+                        loader.innerHTML = 'Could not load d3.js (network blocked?)';
+                        d3Available = false;
+                        return;
+                    }
+                } else { d3Available = true; }
                 
                 // Apply color to BOTH canvas and container to prevent white fringes
                 if (xData.backgroundColor) {
@@ -1090,32 +1202,48 @@ HTMLWidgets.widget({
                 xDomainOrig = [xData.x_min, xData.x_max]; yDomainOrig = [xData.y_min, xData.y_max];
 
                 // [FIX] Use ACTUAL DOM size, not factory width/height which may be stale
+                // Use live container dimensions; the factory `width`/`height`
+                // can be stale (especially in RStudio Viewer / Jupyter where
+                // the parent is resized after construction).
                 const rect0 = container.getBoundingClientRect();
-                const fullW0 = Math.floor(rect0.width);
-                const fullH0 = Math.floor(rect0.height);
+                const fullW0 = Math.max(1, Math.floor(rect0.width)  || widgetWidth  || 600);
+                const fullH0 = Math.max(1, Math.floor(rect0.height) || widgetHeight || 500);
+                widgetWidth  = fullW0;
+                widgetHeight = fullH0;
                 const cW = Math.max(0, fullW0 - margin.left - margin.right);
-                const cH = Math.max(0, fullH0 - margin.top - margin.bottom);
+                const cH = Math.max(0, fullH0 - margin.top  - margin.bottom);
 
                 if (d3Available && xData.showAxes) {
                     svg = d3.select(container).append('svg')
-                        .attr('width', width).attr('height', height)
-                        .style('position', 'absolute').style('top', 0).style('left', 0).style('pointer-events', 'none');
-                    xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', `translate(0, ${height - margin.bottom})`);
+                        .attr('width', fullW0).attr('height', fullH0)
+                        .style('position', 'absolute').style('top', 0).style('left', 0)
+                        .style('pointer-events', 'none')
+                        // Force a sans-serif font on the whole SVG so tick numbers
+                        // don't inherit a serif default from the host (RStudio
+                        // Viewer's Qt webview falls back to Times otherwise).
+                        .style('font-family',
+                            '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif');
+                    xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', `translate(0, ${fullH0 - margin.bottom})`);
                     yAxisG = svg.append('g').attr('class', 'y-axis').attr('transform', `translate(${margin.left}, 0)`);
-                    
-                    // --- UPDATED: Axis Labels with Color ---
+
                     svg.append('text').attr('class','x-label')
-                        .attr('x', margin.left+(width-margin.left-margin.right)/2).attr('y',height - (margin.bottom/4))
-                        .text(xData.xlab||'X').attr('text-anchor','middle').style('font-family','sans-serif').style('font-size', fSize+'px').attr('fill', currentAxisColor);
-                    
+                        .attr('x', margin.left + (fullW0 - margin.left - margin.right)/2)
+                        .attr('y', fullH0 - (margin.bottom/4))
+                        .text(xData.xlab||'X').attr('text-anchor','middle')
+                        .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif').style('font-size', fSize+'px')
+                        .attr('fill', currentAxisColor);
+
                     svg.append('text').attr('class','y-label').attr('transform','rotate(-90)')
-                        .attr('x', -(margin.top+(height-margin.top-margin.bottom)/2)).attr('y', margin.left/3)
-                        .text(xData.ylab||'Y').attr('text-anchor','middle').style('font-family','sans-serif').style('font-size', fSize+'px').attr('fill', currentAxisColor);
-                        
-                    xScale = d3.scaleLinear().domain(xDomainOrig).range([margin.left, width - margin.right]);
-                    yScale = d3.scaleLinear().domain(yDomainOrig).range([height - margin.bottom, margin.top]);
-                    const ticks = (height < 200) ? 3 : 6;
-                    xAxis = d3.axisBottom(xScale).ticks(ticks); 
+                        .attr('x', -(margin.top + (fullH0 - margin.top - margin.bottom)/2))
+                        .attr('y', margin.left/3)
+                        .text(xData.ylab||'Y').attr('text-anchor','middle')
+                        .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif').style('font-size', fSize+'px')
+                        .attr('fill', currentAxisColor);
+
+                    xScale = d3.scaleLinear().domain(xDomainOrig).range([margin.left, fullW0 - margin.right]);
+                    yScale = d3.scaleLinear().domain(yDomainOrig).range([fullH0 - margin.bottom, margin.top]);
+                    const ticks = (fullH0 < 200) ? 3 : 6;
+                    xAxis = d3.axisBottom(xScale).ticks(ticks);
                     yAxis = d3.axisLeft(yScale).ticks(ticks);
                     
                     // Call updateAxes immediately to set colors
@@ -1123,7 +1251,7 @@ HTMLWidgets.widget({
                 }
 
                 if (xData.showTooltip && !tooltip) {
-                    tooltip = document.createElement('div'); tooltip.style.cssText = `position:absolute;background:rgba(0,0,0,0.85);color:white;padding:6px 10px;border-radius:4px;font-size:12px;pointer-events:none;display:none;z-index:1000;font-family:sans-serif;`;
+                    tooltip = document.createElement('div'); tooltip.style.cssText = `position:absolute;background:rgba(0,0,0,0.85);color:white;padding:6px 10px;border-radius:4px;font-size:12px;pointer-events:none;display:none;z-index:1000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Cantarell","Noto Sans",Roboto,Arial,sans-serif;`;
                     container.appendChild(tooltip);
                 }
 
@@ -1133,13 +1261,26 @@ HTMLWidgets.widget({
                 canvas.style.top = margin.top+'px'; 
                 canvas.style.left = margin.left+'px';
 
-                if (!renderer) { const mod = await import('https://esm.sh/regl-scatterplot@1.14.1'); renderer = mod.createRenderer(); }
+                // Load regl-scatterplot once and cache on window so multiple
+                // widget instances share a single import and the same renderer
+                // (the latter is required by the library for context sharing).
+                if (!window.__reglScatterplotMod) {
+                    try {
+                        window.__reglScatterplotMod = await import('https://esm.sh/regl-scatterplot@1.14.1');
+                    } catch (err) {
+                        console.error('[reglScatterplot] failed to load regl-scatterplot from CDN', err);
+                        loader.innerHTML = 'Could not load regl-scatterplot (network blocked?)';
+                        return;
+                    }
+                }
+                const reglMod = window.__reglScatterplotMod;
+                if (!renderer) { renderer = reglMod.createRenderer(); }
                 const intXScale = d3.scaleLinear().domain([-1,1]).range([0,cW]);
                 const intYScale = d3.scaleLinear().domain([-1,1]).range([cH,0]);
-                let initialAspectRatio = null; 
-                if (xData.autoFit) initialAspectRatio = cW / cH; 
+                let initialAspectRatio = null;
+                if (xData.autoFit) initialAspectRatio = cW / cH;
 
-                const createScatterplot = (await import('https://esm.sh/regl-scatterplot@1.14.1')).default;
+                const createScatterplot = reglMod.default;
                 
                 try {
                     plot = createScatterplot({ 
@@ -1151,7 +1292,7 @@ HTMLWidgets.widget({
                     newConf.colorBy = xData.options.colorBy ? xData.options.colorBy : null;
                     if (initialView) newConf.cameraView = initialView;
                     plot.set(newConf);
-                    if (xData.autoFit && !initialView) plot.zoomToArea({ x: -1, y: -1, width: 2, height: 2 }, { transition: false });
+                    if (xData.autoFit && !initialView) plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: false });
                     const points = new Array(n);
                     if (dataBuffers.z) { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i], dataBuffers.z[i]]; } 
                     else { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i]]; }
@@ -1175,27 +1316,75 @@ HTMLWidgets.widget({
                     updateAxes();
                 };
 
-                if (!initialView && isInitialRender && !xData.autoFit) {
-                     const autoAdjustZoom = function() {
-                        const rect = container.getBoundingClientRect();
-                        const currW = rect.width - margin.left - margin.right;
-                        const currH = rect.height - margin.top - margin.bottom;
-                        if (currW <= 0 || currH <= 0) return;
-                        const xr = xDomainOrig[1] - xDomainOrig[0]; const yr = yDomainOrig[1] - yDomainOrig[0];
-                        const sAsp = xr / yr; const cAsp = currW / currH;
-                        let zX, zY, zW, zH;
-                        if (sAsp > cAsp) { zW = 2; zH = 2 * (sAsp / cAsp); zX = -1; zY = -zH / 2; } 
-                        else { zH = 2; zW = 2 * (cAsp / sAsp); zX = -zW / 2; zY = -1; }
-                        plot.zoomToArea({ x: zX, y: zY, width: zW, height: zH }, true);
-                     };
-                     autoAdjustZoom();
-                } else { if (d3Available) updateAxesFromCamera(); }
+                // Hoist autoAdjustZoom so resize() can re-call it while the
+                // user hasn't yet touched the camera. This is the fix for
+                // "data clipped at bottom in tiled / flex layouts": initial
+                // dimensions come from a still-settling container, and the
+                // first fit ends up wrong.
+                const autoAdjustZoom = function () {
+                    if (!plot || plot._destroyed) return;
+                    const rect = container.getBoundingClientRect();
+                    const currW = rect.width  - margin.left - margin.right;
+                    const currH = rect.height - margin.top  - margin.bottom;
+                    if (currW <= 0 || currH <= 0) return;
+                    const xr = xDomainOrig[1] - xDomainOrig[0];
+                    const yr = yDomainOrig[1] - yDomainOrig[0];
+                    const sAsp = xr / yr;
+                    const cAsp = currW / currH;
+                    let zX, zY, zW, zH;
+                    if (sAsp > cAsp) {
+                        zW = 2; zH = 2 * (sAsp / cAsp);
+                        zX = -1; zY = -zH / 2;
+                    } else {
+                        zH = 2; zW = 2 * (cAsp / sAsp);
+                        zX = -zW / 2; zY = -1;
+                    }
+                    // Add 8% safety padding on every side. Without it the
+                    // requested area is exactly at the data edges, and points
+                    // at +/- 1 get culled or visually clipped by the projection
+                    // / margins of the axis layer.
+                    const pad = 0.08;
+                    zX -= zW * pad / 2;
+                    zY -= zH * pad / 2;
+                    zW *= (1 + pad);
+                    zH *= (1 + pad);
+                    plot.zoomToArea({ x: zX, y: zY, width: zW, height: zH },
+                                    { transition: false });
+                };
+
+                // Default camera ([-1, 1] x [-1, 1]) combined with R-side
+                // 25% range padding shows data in [-0.8, +0.8] with a 20%
+                // visual margin. Calling autoAdjustZoom() here was causing
+                // edge clipping because regl-scatterplot's `zoomToArea`
+                // appears to apply an internal aspect-ratio constraint we
+                // can't predict. The data-aspect-preservation goal is now
+                // handled instead by the R-side padded range, which already
+                // encodes the correct visible domain into x_min/x_max.
+                if (d3Available) updateAxesFromCamera();
                 
-                if (!resizeObserver) { 
-                    resizeObserver = new ResizeObserver((entries) => {
-                         // resize logic
-                    }); 
-                    resizeObserver.observe(container); 
+                // ResizeObserver: outside of Shiny (RStudio Viewer, Jupyter,
+                // standalone HTML) htmlwidgets does not always call resize()
+                // on container changes, so we drive it ourselves via a
+                // ref held by the factory (see `instanceResize` below).
+                if (!resizeObserver) {
+                    let resizeRaf = null;
+                    resizeObserver = new ResizeObserver(() => {
+                        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+                        resizeRaf = requestAnimationFrame(() => {
+                            resizeRaf = null;
+                            const r = container.getBoundingClientRect();
+                            const w = Math.floor(r.width);
+                            const h = Math.floor(r.height);
+                            if (w <= 0 || h <= 0) return;
+                            if (w === widgetWidth && h === widgetHeight) return;
+                            if (typeof instanceResize === 'function') {
+                                instanceResize(w, h);
+                            } else {
+                                widgetWidth = w; widgetHeight = h;
+                            }
+                        });
+                    });
+                    resizeObserver.observe(container);
                 }
 
                 let syncGroup = (existingEntry && existingEntry.syncGroup) ? existingEntry.syncGroup : null;
@@ -1213,7 +1402,11 @@ HTMLWidgets.widget({
                     updateLegendUI: updateLegendUI, createLegend: createLegend,
                     isInitializing: true, autoFit: xData.autoFit, serverIndices: xData.init_server_indices,
                     legendBg: xData.legendBg,
-                    legendText: xData.legendText
+                    legendText: xData.legendText,
+                    legendAnchor: xData.legendAnchor,
+                    draggableLegend: xData.draggableLegend !== false,
+                    autoAdjustZoom: autoAdjustZoom,
+                    cameraTouched: false
                 });
                 
                 if (xData.init_selected_indices && xData.init_selected_indices.length > 0) {
@@ -1224,11 +1417,19 @@ HTMLWidgets.widget({
                 updateLegendUI(); 
                 recalcAndApplyFilters(globalRegistry.get(plotId));
 
-                const unsubView = plot.subscribe('view', () => { 
-                    updateAxesFromCamera(); 
+                const unsubView = plot.subscribe('view', () => {
+                    updateAxesFromCamera();
                     const e = globalRegistry.get(plotId);
-                    if (e) { e.savedCameraView = cloneCamera(plot.get('cameraView')); }
-                    if(!globalRegistry.globalSyncEnabled) return; 
+                    if (e) {
+                        e.savedCameraView = cloneCamera(plot.get('cameraView'));
+                        // Only treat view events as "user interaction" when
+                        // (a) we're past initial setup and (b) we're not
+                        // currently inside a programmatic resize / zoom call.
+                        if (!e.isInitializing && !suppressTouchedFlip) {
+                            e.cameraTouched = true;
+                        }
+                    }
+                    if(!globalRegistry.globalSyncEnabled) return;
                     if (globalRegistry.get(plotId).isInitializing) return;
                     if (globalRegistry.syncLeader && globalRegistry.syncLeader !== plotId) return;
                     globalRegistry.syncLeader = plotId;
@@ -1288,13 +1489,25 @@ HTMLWidgets.widget({
                 }
 
                 await createLegend(container, xData.legend, xData.legendFontSize || 12);
-                if(xData.enableDownload) createDownloadButton(container);
+                // Hide the download button inside IDE iframes (RStudio Viewer,
+                // VSCode Jupyter, Jupyter Lab) because download dialogs there
+                // collide with the IDE's own toolbar. The button is shown in
+                // standalone HTML, Shiny apps, and full-browser RStudio Zoom.
+                const inIframe = (function () {
+                    try { return window.parent !== window; } catch (e) { return true; }
+                })();
+                const inShiny = (typeof Shiny !== 'undefined');
+                const showDownload = xData.enableDownload !== false &&
+                    (!inIframe || inShiny);
+                if (showDownload) createDownloadButton(container);
                 prevNumPoints = n;
                 updateLegendUI(); 
                 recalcAndApplyFilters(globalRegistry.get(plotId));
             },
             
             resize: function(w, h) {
+                widgetWidth = w;
+                widgetHeight = h;
                 const newW = w; const newH = h;
                 const cW = newW - margin.left - margin.right;
                 const cH = newH - margin.top - margin.bottom;
@@ -1302,15 +1515,32 @@ HTMLWidgets.widget({
                     canvas.width = cW; canvas.height = cH;
                     canvas.style.width = cW + 'px'; canvas.style.height = cH + 'px';
                     const entry = globalRegistry.get(plotId);
-                    if (entry && entry.autoFit) {
-                        plot.set({ width: cW, height: cH, aspectRatio: cW / cH });
-                        plot.zoomToArea({ x: -1, y: -1, width: 2, height: 2 });
-                    } else {
-                        plot.set({ width: cW, height: cH, aspectRatio: null });
+                    // Mark every camera write that happens here as
+                    // programmatic so the 'view' subscriber doesn't promote
+                    // it to a "user touched the camera" event.
+                    suppressTouchedFlip = true;
+                    try {
+                        if (entry && entry.autoFit) {
+                            plot.set({ width: cW, height: cH, aspectRatio: cW / cH });
+                            plot.zoomToArea({ x: -1.08, y: -1.08,
+                                              width: 2.16, height: 2.16 },
+                                            { transition: false });
+                        } else {
+                            // Just update dimensions; let the default camera
+                            // continue to show the data domain.
+                            plot.set({ width: cW, height: cH, aspectRatio: null });
+                        }
+                    } finally {
+                        // Release the guard on the next frame so any
+                        // queued view events from regl-scatterplot have a
+                        // chance to fire under the suppression.
+                        requestAnimationFrame(() => {
+                            suppressTouchedFlip = false;
+                        });
                     }
-                    if (svg) { 
+                    if (svg) {
                         svg.attr('width', newW).attr('height', newH);
-                        if (xScale) xScale.range([margin.left, newW - margin.right]); 
+                        if (xScale) xScale.range([margin.left, newW - margin.right]);
                         if (yScale) yScale.range([newH - margin.bottom, margin.top]);
                         if (xAxisG) xAxisG.attr('transform', `translate(0, ${newH - margin.bottom})`);
                         if (svg.select('.x-label')) svg.select('.x-label').attr('x', margin.left + cW/2).attr('y', newH - (margin.bottom/4));
@@ -1327,5 +1557,25 @@ HTMLWidgets.widget({
                 requestAnimationFrame(() => { try { plot.draw(); } catch(e) {} });
             }
         };
+        instanceResize = instance.resize;
+        return instance;
     }
 });
+
+})(); // end IIFE
+
+// ---------------------------------------------------------------------------
+// Auto-bootstrap: htmlwidgets normally calls HTMLWidgets.staticRender() on
+// DOMContentLoaded, but Jupyter / IRkernel inject the cell's HTML *after*
+// that event has already fired in the output iframe, so the factory never
+// runs and the user sees a div without a canvas. Re-triggering staticRender
+// here is a no-op in environments where the bootstrap already worked.
+// ---------------------------------------------------------------------------
+if (typeof HTMLWidgets !== 'undefined' &&
+    typeof HTMLWidgets.staticRender === 'function') {
+    setTimeout(function () {
+        try { HTMLWidgets.staticRender(); } catch (e) {
+            console.warn('[reglScatterplot] staticRender failed', e);
+        }
+    }, 0);
+}
