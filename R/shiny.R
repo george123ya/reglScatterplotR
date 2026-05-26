@@ -18,22 +18,25 @@
 #'
 #' @examples
 #' if (interactive()) {
-#'   ui <- shiny::fluidPage(reglScatterplotOutput("plot"))
-#'   server <- function(input, output, session) {
-#'     output$plot <- renderReglScatterplot({
-#'       reglScatterplot(iris, x = "Sepal.Length", y = "Sepal.Width",
-#'                       colorBy = "Species")
-#'     })
-#'   }
-#'   shiny::shinyApp(ui, server)
+#'     ui <- shiny::fluidPage(reglScatterplotOutput("plot"))
+#'     server <- function(input, output, session) {
+#'         output$plot <- renderReglScatterplot({
+#'             reglScatterplot(iris,
+#'                 x = "Sepal.Length", y = "Sepal.Width",
+#'                 colorBy = "Species"
+#'             )
+#'         })
+#'     }
+#'     shiny::shinyApp(ui, server)
 #' }
 #'
 #' @name reglScatterplot-shiny
 #' @export
 reglScatterplotOutput <- function(outputId, width = "100%", height = "600px") {
     htmlwidgets::shinyWidgetOutput(outputId, "reglScatterplot",
-                                   width, height,
-                                   package = "reglScatterplot")
+        width, height,
+        package = "reglScatterplotR"
+    )
 }
 
 #' @rdname reglScatterplot-shiny
@@ -41,7 +44,8 @@ reglScatterplotOutput <- function(outputId, width = "100%", height = "600px") {
 renderReglScatterplot <- function(expr, env = parent.frame(), quoted = FALSE) {
     if (!quoted) expr <- substitute(expr)
     htmlwidgets::shinyRenderWidget(expr, reglScatterplotOutput, env,
-                                   quoted = TRUE)
+        quoted = TRUE
+    )
 }
 
 #' Link the camera of multiple scatterplots
@@ -57,17 +61,20 @@ renderReglScatterplot <- function(expr, env = parent.frame(), quoted = FALSE) {
 #'   message to the browser.
 #' @examples
 #' if (interactive()) {
-#'   enableReglScatterplotSync(c("plotA", "plotB"))
+#'     enableReglScatterplotSync(c("plotA", "plotB"))
 #' }
 #' @export
 enableReglScatterplotSync <- function(plotIds, enabled = TRUE,
                                       session = shiny::getDefaultReactiveDomain()) {
     if (is.null(session)) {
         stop("`enableReglScatterplotSync()` must be called inside a Shiny session.",
-             call. = FALSE)
+            call. = FALSE
+        )
     }
-    session$sendCustomMessage("my_scatterplot_sync",
-                              list(plotIds = plotIds, enabled = enabled))
+    session$sendCustomMessage(
+        "my_scatterplot_sync",
+        list(plotIds = plotIds, enabled = enabled)
+    )
     invisible(NULL)
 }
 
@@ -79,18 +86,21 @@ enableReglScatterplotSync <- function(plotIds, enabled = TRUE,
 #' @return Invisibly `NULL`.
 #' @examples
 #' if (interactive()) {
-#'   updateReglPointSize("plotA", size = 5)
+#'     updateReglPointSize("plotA", size = 5)
 #' }
 #' @export
 updateReglPointSize <- function(plotIds, size,
                                 session = shiny::getDefaultReactiveDomain()) {
     if (is.null(session)) {
         stop("`updateReglPointSize()` must be called inside a Shiny session.",
-             call. = FALSE)
+            call. = FALSE
+        )
     }
     for (id in plotIds) {
-        session$sendCustomMessage("update_point_size",
-                                  list(plotId = id, size = size))
+        session$sendCustomMessage(
+            "update_point_size",
+            list(plotId = id, size = size)
+        )
     }
     invisible(NULL)
 }

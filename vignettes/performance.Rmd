@@ -2,7 +2,7 @@
 title: "Scaling reglScatterplot to millions of points"
 author: "George Muñoz"
 date: "`r Sys.Date()`"
-package: reglScatterplot
+package: reglScatterplotR
 output:
   BiocStyle::html_document:
     toc: true
@@ -17,7 +17,7 @@ vignette: >
 knitr::opts_chunk$set(
     collapse = TRUE,
     comment = "#>",
-    eval = FALSE
+    screenshot.force = FALSE
 )
 ```
 
@@ -52,20 +52,25 @@ finite. The same data with Float32 everywhere would be ~150 MB.
 # A benchmark you can run yourself
 
 ```{r bench}
-library(reglScatterplot)
+library(reglScatterplotR)
 
 bench_sizes <- c(1e4, 1e5, 1e6, 5e6)
 for (n in bench_sizes) {
     df <- data.frame(x = rnorm(n), y = rnorm(n), v = runif(n))
     t0 <- Sys.time()
-    w  <- reglScatterplot(df, x = "x", y = "y", colorBy = "v",
-                          height = 600)
+    w <- reglScatterplot(df,
+        x = "x", y = "y", colorBy = "v",
+        height = 600
+    )
     payload <- htmlwidgets:::toJSON(w$x)
-    cat(sprintf("n = %s : build = %.2fs, payload = %.1f MB\n",
-                format(n, big.mark = ","),
-                as.numeric(Sys.time() - t0, units = "secs"),
-                nchar(payload) / 1024 / 1024))
-    rm(df, w, payload); gc(verbose = FALSE)
+    cat(sprintf(
+        "n = %s : build = %.2fs, payload = %.1f MB\n",
+        format(n, big.mark = ","),
+        as.numeric(Sys.time() - t0, units = "secs"),
+        nchar(payload) / 1024 / 1024
+    ))
+    rm(df, w, payload)
+    gc(verbose = FALSE)
 }
 ```
 
@@ -103,12 +108,12 @@ Suggested defaults for huge inputs:
 ```{r huge, eval = FALSE}
 reglScatterplot(huge_df,
     x = "x", y = "y",
-    pointSize = 1,            # one pixel per point
-    opacity = 1,              # no blending math
-    showAxes = FALSE,         # drops the D3 axis layer
-    showTooltip = FALSE,      # frees per-point hit-test work
-    enableDownload = FALSE,   # no html2canvas / jsPDF download
-    pointLabels = NULL        # don't ship gene names
+    pointSize = 1, # one pixel per point
+    opacity = 1, # no blending math
+    showAxes = FALSE, # drops the D3 axis layer
+    showTooltip = FALSE, # frees per-point hit-test work
+    enableDownload = FALSE, # no html2canvas / jsPDF download
+    pointLabels = NULL # don't ship gene names
 )
 ```
 

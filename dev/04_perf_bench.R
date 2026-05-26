@@ -1,6 +1,6 @@
 ## dev/04_perf_bench.R - R-side build + serialize ladder.
 
-library(reglScatterplot)
+library(reglScatterplotR)
 
 bench_sizes <- c(1e4, 5e4, 1e5, 5e5, 1e6, 2e6, 5e6)
 results <- data.frame()

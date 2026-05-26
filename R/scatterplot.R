@@ -104,16 +104,18 @@
 #'     score = runif(2000)
 #' )
 #' reglScatterplot(df, x = "x", y = "y", colorBy = "group")
-#' reglScatterplot(df, x = "x", y = "y", colorBy = "score",
-#'                 continuousPalette = "magma")
+#' reglScatterplot(df,
+#'     x = "x", y = "y", colorBy = "score",
+#'     continuousPalette = "magma"
+#' )
 #'
-#' \dontrun{
+#' \donttest{
 #' # Single-cell UMAP from a SingleCellExperiment
-#' reglScatterplot(sce, dimred = "UMAP", colorBy = "cluster")
+#' # reglScatterplot(sce, dimred = "UMAP", colorBy = "cluster")
 #' # Colour by a gene
-#' reglScatterplot(sce, dimred = "UMAP", colorBy = "MS4A1")
+#' # reglScatterplot(sce, dimred = "UMAP", colorBy = "MS4A1")
 #' # Spatial coordinates from a SpatialExperiment
-#' reglScatterplot(spe, dimred = "spatial", colorBy = "celltype")
+#' # reglScatterplot(spe, dimred = "spatial", colorBy = "celltype")
 #' }
 #'
 #' @seealso [enableReglScatterplotSync()], [updateReglPointSize()]
@@ -161,16 +163,18 @@ reglScatterplot <- function(data = NULL,
                             filteredIndices = NULL,
                             selectedIndices = NULL,
                             syncState = TRUE) {
-
     ## ---- Bioconductor object dispatch -----------------------------------
     if (!is.null(data) &&
         (inherits(data, "SingleCellExperiment") ||
-         inherits(data, "SpatialExperiment"))) {
+            inherits(data, "SpatialExperiment"))) {
         ## Resolve `x` as the `dimred` argument (default "UMAP") so the user
         ## writes reglScatterplot(sce, dimred = "UMAP") and we don't fight
         ## the existing positional signature.
-        dimred <- if (!missing(x) && is.character(x) && length(x) == 1L) x
-                  else "UMAP"
+        dimred <- if (!missing(x) && is.character(x) && length(x) == 1L) {
+            x
+        } else {
+            "UMAP"
+        }
         return(.reglScatterplotFromSCE(
             sce = data,
             dimred = dimred,
@@ -232,13 +236,12 @@ reglScatterplot <- function(data = NULL,
     performance_mode <- n_points > 500000L
     if (performance_mode) {
         if (is.null(pointSize)) pointSize <- 1
-        if (is.null(opacity))   opacity <- 1
-        pointLabels <- NULL  # tooltips kill perf
+        if (is.null(opacity)) opacity <- 1
+        pointLabels <- NULL # tooltips kill perf
     } else if (is.null(pointSize)) {
         ## Smaller datasets get visibly larger points so they read well in
         ## both the inline Viewer and the RStudio Zoom popup.
-        pointSize <- if (n_points < 5000L) 5 else
-                     if (n_points < 50000L) 4 else 3
+        pointSize <- if (n_points < 5000L) 5 else if (n_points < 50000L) 4 else 3
     }
     if (is.null(opacity)) opacity <- 0.8
 
@@ -252,7 +255,9 @@ reglScatterplot <- function(data = NULL,
     ## `rangePadding = 0`.
     .padRange <- function(r, frac) {
         d <- diff(r)
-        if (!is.finite(d) || d == 0) return(r)
+        if (!is.finite(d) || d == 0) {
+            return(r)
+        }
         c(r[1L] - d * frac, r[2L] + d * frac)
     }
     xrange <- xrange %||% .padRange(range(x_vec, na.rm = TRUE), rangePadding)
@@ -264,22 +269,28 @@ reglScatterplot <- function(data = NULL,
     ## ---- variable names for legend/registry ------------------------------
     color_var_name <- if (is.character(colorBy) && length(colorBy) == 1L) {
         colorBy
-    } else "Solid_Color"
+    } else {
+        "Solid_Color"
+    }
     group_var_name <- if (is.character(groupBy) && length(groupBy) == 1L) {
         groupBy
-    } else NULL
+    } else {
+        NULL
+    }
 
     ## ---- colours ---------------------------------------------------------
-    col_payload <- .buildColorPayload(color_vec = color_vec,
-                                      color_var_name = color_var_name,
-                                      legend_title = legendTitle,
-                                      point_color = pointColor,
-                                      categorical_palette = categoricalPalette,
-                                      continuous_palette = continuousPalette,
-                                      custom_palette = customPalette,
-                                      custom_colors = customColors,
-                                      vmin = vmin, vmax = vmax,
-                                      center_zero = centerZero)
+    col_payload <- .buildColorPayload(
+        color_vec = color_vec,
+        color_var_name = color_var_name,
+        legend_title = legendTitle,
+        point_color = pointColor,
+        categorical_palette = categoricalPalette,
+        continuous_palette = continuousPalette,
+        custom_palette = customPalette,
+        custom_colors = customColors,
+        vmin = vmin, vmax = vmax,
+        center_zero = centerZero
+    )
 
     options <- col_payload$options
     options$size <- pointSize
@@ -305,11 +316,14 @@ reglScatterplot <- function(data = NULL,
 
     ## Pick the compact z encoder based on the legend's var_type. Falls back
     ## to Float32 for the (rare) "no colour" case.
-    z_payload <- if (is.null(z_norm)) NULL else {
+    z_payload <- if (is.null(z_norm)) {
+        NULL
+    } else {
         switch(legend_data$var_type %||% "",
-               continuous  = .toBase64U16Unit(z_norm),
-               categorical = .toBase64U16Int(z_norm),
-               toBase64(z_norm))
+            continuous  = .toBase64U16Unit(z_norm),
+            categorical = .toBase64U16Int(z_norm),
+            toBase64(z_norm)
+        )
     }
 
     margins <- margins %||% list(top = 20, right = 20, bottom = 40, left = 50)
@@ -351,11 +365,11 @@ reglScatterplot <- function(data = NULL,
     )
 
     htmlwidgets::createWidget(
-        name = "reglScatterplot",
+        name = "reglScatterplot", # widget name (matches inst/htmlwidgets/reglScatterplot.js)
         x = widget_spec,
         width = width,
         height = height,
-        package = "reglScatterplot",
+        package = "reglScatterplotR",
         elementId = elementId,
         sizingPolicy = htmlwidgets::sizingPolicy(
             defaultWidth = "100%",

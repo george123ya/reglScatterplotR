@@ -20,7 +20,9 @@
 #' toBase64(c(1, 2, 3.5))
 #' @export
 toBase64 <- function(vec) {
-    if (is.null(vec)) return(NULL)
+    if (is.null(vec)) {
+        return(NULL)
+    }
     if (!is.double(vec)) vec <- as.double(vec)
     con <- rawConnection(raw(0), "r+")
     on.exit(close(con), add = TRUE)
@@ -54,13 +56,15 @@ toBase64 <- function(vec) {
 ## Compact encoder for vectors known to live in [-1, 1] (used for X/Y).
 ## 1/32767 precision (~3e-5) - well below pixel resolution at any zoom.
 .toBase64U16 <- function(vec) {
-    if (is.null(vec)) return(NULL)
+    if (is.null(vec)) {
+        return(NULL)
+    }
     if (!is.double(vec)) vec <- as.double(vec)
     vec[vec < -1] <- -1
-    vec[vec >  1] <-  1
+    vec[vec > 1] <- 1
     ints <- as.integer(round((vec + 1) * 32767.5))
-    ints[ints < 0L]      <- 0L
-    ints[ints > 65535L]  <- 65535L
+    ints[ints < 0L] <- 0L
+    ints[ints > 65535L] <- 65535L
     .encodeU16(ints, "base64u16:")
 }
 
@@ -68,12 +72,14 @@ toBase64 <- function(vec) {
 ## 1/65535 precision is finer than 8-bit per-channel display output, so
 ## continuous palettes look bit-identical to the Float32 version.
 .toBase64U16Unit <- function(vec) {
-    if (is.null(vec)) return(NULL)
+    if (is.null(vec)) {
+        return(NULL)
+    }
     if (!is.double(vec)) vec <- as.double(vec)
     vec[vec < 0] <- 0
     vec[vec > 1] <- 1
     ints <- as.integer(round(vec * 65535))
-    ints[ints < 0L]     <- 0L
+    ints[ints < 0L] <- 0L
     ints[ints > 65535L] <- 65535L
     .encodeU16(ints, "base64u16u:")
 }
@@ -82,7 +88,9 @@ toBase64 <- function(vec) {
 ## colour and group indices). Caps at 65535 categories - well beyond any
 ## realistic dataset.
 .toBase64U16Int <- function(vec) {
-    if (is.null(vec)) return(NULL)
+    if (is.null(vec)) {
+        return(NULL)
+    }
     ints <- as.integer(vec)
     if (any(ints < 0L, na.rm = TRUE) || any(ints > 65535L, na.rm = TRUE)) {
         stop(".toBase64U16Int: integers must lie in [0, 65535].", call. = FALSE)
@@ -97,22 +105,28 @@ toBase64 <- function(vec) {
     if (is.null(limit_arg)) {
         return(as.numeric(default_fn(data_vec, na.rm = TRUE)))
     }
-    if (is.numeric(limit_arg)) return(as.numeric(limit_arg))
+    if (is.numeric(limit_arg)) {
+        return(as.numeric(limit_arg))
+    }
     if (!is.character(limit_arg) || length(limit_arg) != 1L) {
         stop("`vmin`/`vmax` must be NULL, numeric, or a single string.",
-             call. = FALSE)
+            call. = FALSE
+        )
     }
     val <- if (grepl("^p[0-9]+(\\.[0-9]+)?$", limit_arg)) {
         stats::quantile(data_vec,
-                        probs = as.numeric(sub("p", "", limit_arg)) / 100,
-                        na.rm = TRUE)
+            probs = as.numeric(sub("p", "", limit_arg)) / 100,
+            na.rm = TRUE
+        )
     } else if (limit_arg == "min") {
         min(data_vec, na.rm = TRUE)
     } else if (limit_arg == "max") {
         max(data_vec, na.rm = TRUE)
     } else {
-        stop(sprintf("Unrecognised limit '%s'. Use a number, 'min', 'max' or 'pNN'.",
-                     limit_arg), call. = FALSE)
+        stop(sprintf(
+            "Unrecognised limit '%s'. Use a number, 'min', 'max' or 'pNN'.",
+            limit_arg
+        ), call. = FALSE)
     }
     as.numeric(unname(val))
 }
@@ -121,7 +135,9 @@ toBase64 <- function(vec) {
 ## `arg` may be either a column name (length-1 character) when `data` is set,
 ## or a vector. Returns NULL when `arg` is NULL.
 .resolveColumn <- function(arg, data) {
-    if (is.null(arg)) return(NULL)
+    if (is.null(arg)) {
+        return(NULL)
+    }
     if (!is.null(data) && is.character(arg) && length(arg) == 1L &&
         arg %in% names(data)) {
         return(data[[arg]])
@@ -133,11 +149,13 @@ toBase64 <- function(vec) {
 ## Fused expression keeps the temporary count low (matters once `vec` is
 ## tens of millions of points).
 .normaliseRange <- function(vec, lo, hi) {
-    if (hi == lo) return(rep.int(0, length(vec)))
+    if (hi == lo) {
+        return(rep.int(0, length(vec)))
+    }
     scale <- 2 / (hi - lo)
     out <- (vec - lo) * scale - 1
     out[out < -1] <- -1
-    out[out >  1] <-  1
+    out[out > 1] <- 1
     out
 }
 
@@ -145,19 +163,24 @@ toBase64 <- function(vec) {
 ## Accepts a named anchor ("top-right" / "top-left" / "bottom-right" /
 ## "bottom-left") or a length-2 numeric vector c(x_px, y_px).
 .resolveLegendPosition <- function(pos) {
-    if (is.null(pos)) return(list(anchor = "top-right"))
+    if (is.null(pos)) {
+        return(list(anchor = "top-right"))
+    }
     if (is.numeric(pos) && length(pos) == 2L) {
-        return(list(anchor = "custom",
-                    x = as.numeric(pos[1L]),
-                    y = as.numeric(pos[2L])))
+        return(list(
+            anchor = "custom",
+            x = as.numeric(pos[1L]),
+            y = as.numeric(pos[2L])
+        ))
     }
     valid <- c("top-right", "top-left", "bottom-right", "bottom-left")
     if (is.character(pos) && length(pos) == 1L && pos %in% valid) {
         return(list(anchor = pos))
     }
     stop("`legendPosition` must be one of \"top-right\", \"top-left\", ",
-         "\"bottom-right\", \"bottom-left\", or a length-2 numeric c(x, y).",
-         call. = FALSE)
+        "\"bottom-right\", \"bottom-left\", or a length-2 numeric c(x, y).",
+        call. = FALSE
+    )
 }
 
 ## Validation: assert that `x` is the right shape for a plot coordinate.

@@ -61,6 +61,8 @@ test_that("missing reducedDim errors with a helpful message", {
     sce <- SingleCellExperiment(
         assays = list(counts = matrix(1, 5, 10))
     )
-    expect_error(reglScatterplot(sce, x = "UMAP"),
-                 "No reducedDims found")
+    expect_error(
+        reglScatterplot(sce, x = "UMAP"),
+        "No reducedDims found"
+    )
 })

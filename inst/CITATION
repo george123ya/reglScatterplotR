@@ -1,12 +1,12 @@
-citHeader("To cite the reglScatterplot R package, please use:")
+citHeader("To cite the reglScatterplotR package, please use:")
 
 bibentry(
     bibtype = "Manual",
-    title   = "reglScatterplot: Interactive WebGL Scatterplots for Biological Data Exploration",
+    title   = "reglScatterplotR: Interactive WebGL Scatterplots for Biological Data Exploration",
     author  = person("George", "Muñoz"),
     year    = format(Sys.Date(), "%Y"),
     note    = sprintf("R package version %s",
-                      utils::packageVersion("reglScatterplot")),
+                      utils::packageVersion("reglScatterplotR")),
     url     = "https://github.com/george123ya/reglScatterplotR"
 )
 

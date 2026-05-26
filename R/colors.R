@@ -4,7 +4,9 @@
 
 ## Convert any acceptable colour representation to a 7-char hex string.
 .toHex7 <- function(col) {
-    if (grepl("^#", col)) return(substr(col, 1L, 7L))
+    if (grepl("^#", col)) {
+        return(substr(col, 1L, 7L))
+    }
     grDevices::rgb(t(grDevices::col2rgb(col)), maxColorValue = 255)
 }
 
@@ -51,13 +53,14 @@
 ## Build a 256-step continuous palette by name.
 .resolveContinuousPalette <- function(name = "viridis") {
     fn <- switch(name,
-                 viridis = viridisLite::viridis,
-                 magma   = viridisLite::magma,
-                 plasma  = viridisLite::plasma,
-                 inferno = viridisLite::inferno,
-                 cividis = viridisLite::cividis,
-                 turbo   = viridisLite::turbo,
-                 viridisLite::viridis)
+        viridis = viridisLite::viridis,
+        magma   = viridisLite::magma,
+        plasma  = viridisLite::plasma,
+        inferno = viridisLite::inferno,
+        cividis = viridisLite::cividis,
+        turbo   = viridisLite::turbo,
+        viridisLite::viridis
+    )
     substr(fn(256L), 1L, 7L)
 }
 
@@ -91,9 +94,11 @@
     if (is.character(color_vec) || is.factor(color_vec)) {
         f <- as.factor(color_vec)
         lvls <- levels(f)
-        hex_cols <- .resolveCategoricalPalette(lvls, custom_colors,
-                                               custom_palette,
-                                               categorical_palette)
+        hex_cols <- .resolveCategoricalPalette(
+            lvls, custom_colors,
+            custom_palette,
+            categorical_palette
+        )
         z_norm <- as.integer(f) - 1L
         options$colorBy <- "valueA"
         options$pointColor <- as.vector(hex_cols)
@@ -113,7 +118,7 @@
         if (center_zero) {
             abs_lim <- max(abs(c_min), abs(c_max))
             c_min <- -abs_lim
-            c_max <-  abs_lim
+            c_max <- abs_lim
         }
         rng <- c_max - c_min
         if (rng == 0) rng <- 1

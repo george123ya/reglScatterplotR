@@ -1,7 +1,7 @@
 ## dev/01_basic.R - smoke test.
 ## devtools::load_all() then source().
 
-library(reglScatterplot)
+library(reglScatterplotR)
 
 w <- reglScatterplot(
     iris,

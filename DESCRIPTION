@@ -1,12 +1,13 @@
-Package: reglScatterplot
+Package: reglScatterplotR
 Type: Package
 Title: Interactive WebGL Scatterplots for Biological Data Exploration
 Version: 0.99.0
 Date: 2026-05-25
 Authors@R:
     person(given = "George", family = "Muñoz",
-           email = "gmunoz@rockefeller.edu",
-           role = c("aut", "cre"))
+           email = "george.munoz@unmsm.edu.pe",
+           role = c("aut", "cre"),
+           comment = c(ORCID = "0009-0007-3765-9967"))
 Description: Lightweight 'htmlwidgets' interface to the JavaScript
     'regl-scatterplot' library, rendering millions of two-dimensional points
     in the browser via WebGL. Designed for exploratory visualisation of
@@ -20,10 +21,10 @@ License: MIT + file LICENSE
 URL: https://github.com/george123ya/reglScatterplotR
 BugReports: https://github.com/george123ya/reglScatterplotR/issues
 Encoding: UTF-8
-biocViews: Software, Visualization, SingleCell, GeneExpression,
+biocViews: Software, Visualization, SingleCell, Spatial, GeneExpression,
     Transcriptomics, DimensionReduction, ShinyApps
 Depends:
-    R (>= 4.4.0)
+    R (>= 4.6.0)
 Imports:
     htmlwidgets,
     base64enc,

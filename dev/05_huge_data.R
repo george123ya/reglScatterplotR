@@ -1,7 +1,7 @@
 ## dev/05_huge_data.R - 10 M point stress test.
 ## Run this only when you've got ~4 GB of free RAM.
 
-library(reglScatterplot)
+library(reglScatterplotR)
 
 N <- as.integer(10e6)
 cat(sprintf("Generating %s points...\n", format(N, big.mark = ",")))

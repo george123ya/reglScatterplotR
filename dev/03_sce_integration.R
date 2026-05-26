@@ -1,6 +1,6 @@
 ## dev/03_sce_integration.R - SingleCellExperiment + SpatialExperiment paths.
 
-library(reglScatterplot)
+library(reglScatterplotR)
 
 ## ---- Build a small synthetic SCE ------------------------------------------
 suppressPackageStartupMessages({

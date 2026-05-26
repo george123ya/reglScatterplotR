@@ -1,4 +1,4 @@
-# reglScatterplot wiki
+# reglScatterplotR wiki
 
 Welcome. This wiki collects the recipes that are too long for the README
 and too narrative for the man pages.
@@ -18,7 +18,7 @@ and too narrative for the man pages.
 ## Quick start
 
 ```r
-library(reglScatterplot)
+library(reglScatterplotR)
 reglScatterplot(iris, x = "Sepal.Length", y = "Sepal.Width",
                 colorBy = "Species")
 ```

@@ -10,6 +10,7 @@ inst/doc/
 doc/
 Meta/
 *.tar.gz
+*.BiocCheck/
 
 # OS
 .DS_Store

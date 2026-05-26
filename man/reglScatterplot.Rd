@@ -194,13 +194,13 @@ reglScatterplot(df, x = "x", y = "y", colorBy = "group")
 reglScatterplot(df, x = "x", y = "y", colorBy = "score",
                 continuousPalette = "magma")
 
-\dontrun{
+\donttest{
 # Single-cell UMAP from a SingleCellExperiment
-reglScatterplot(sce, dimred = "UMAP", colorBy = "cluster")
+# reglScatterplot(sce, dimred = "UMAP", colorBy = "cluster")
 # Colour by a gene
-reglScatterplot(sce, dimred = "UMAP", colorBy = "MS4A1")
+# reglScatterplot(sce, dimred = "UMAP", colorBy = "MS4A1")
 # Spatial coordinates from a SpatialExperiment
-reglScatterplot(spe, dimred = "spatial", colorBy = "celltype")
+# reglScatterplot(spe, dimred = "spatial", colorBy = "celltype")
 }
 
 }

@@ -1,6 +1,6 @@
 ## dev/06_compare_libs.R - fair comparison: total HTML build time + size.
 
-library(reglScatterplot)
+library(reglScatterplotR)
 
 bench_compare_fair <- function(n) {
     df <- data.frame(x = rnorm(n), y = rnorm(n), v = runif(n))

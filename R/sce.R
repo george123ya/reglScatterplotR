@@ -17,29 +17,38 @@
         inherits(sce, "SpatialExperiment")) {
         if (!requireNamespace("SpatialExperiment", quietly = TRUE)) {
             stop("Install 'SpatialExperiment' to use dimred = 'spatial'.",
-                 call. = FALSE)
+                call. = FALSE
+            )
         }
         coords <- SpatialExperiment::spatialCoords(sce)
     } else {
         if (!requireNamespace("SingleCellExperiment", quietly = TRUE)) {
             stop("Install 'SingleCellExperiment' to use the SCE method.",
-                 call. = FALSE)
+                call. = FALSE
+            )
         }
         available <- SingleCellExperiment::reducedDimNames(sce)
         if (!length(available)) {
             stop("No reducedDims found in the object. ",
-                 "Call e.g. scater::runUMAP() first.", call. = FALSE)
+                "Call e.g. scater::runUMAP() first.",
+                call. = FALSE
+            )
         }
         if (!dimred %in% available) {
-            stop(sprintf("reducedDim '%s' not found; available: %s",
-                         dimred, paste(available, collapse = ", ")),
-                 call. = FALSE)
+            stop(
+                sprintf(
+                    "reducedDim '%s' not found; available: %s",
+                    dimred, paste(available, collapse = ", ")
+                ),
+                call. = FALSE
+            )
         }
         coords <- SingleCellExperiment::reducedDim(sce, dimred)
     }
     if (ncol(coords) < 2L) {
         stop(sprintf("'%s' must have at least two columns.", dimred),
-             call. = FALSE)
+            call. = FALSE
+        )
     }
     coords
 }
@@ -49,10 +58,13 @@
 ##   - feature rowname     -> a row of `assay(sce, assay)`
 ##   - NULL                -> NULL
 .colorFromSCE <- function(sce, colorBy, assay) {
-    if (is.null(colorBy)) return(NULL)
+    if (is.null(colorBy)) {
+        return(NULL)
+    }
     if (!requireNamespace("SummarizedExperiment", quietly = TRUE)) {
         stop("Install 'SummarizedExperiment' to use colorBy with SCE inputs.",
-             call. = FALSE)
+            call. = FALSE
+        )
     }
     cd <- SummarizedExperiment::colData(sce)
     if (is.character(colorBy) && length(colorBy) == 1L &&
@@ -74,7 +86,8 @@
     }
     stop(sprintf(
         "'%s' is neither a colData column nor a row of the object.",
-        colorBy), call. = FALSE)
+        colorBy
+    ), call. = FALSE)
 }
 
 ## Top-level dispatch helper invoked from `reglScatterplot()` when `data` is

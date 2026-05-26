@@ -25,7 +25,7 @@ the regl-scatterplot CDN dependency the widget always uses).
 # Setup
 
 ```{r packages}
-library(reglScatterplot)
+library(reglScatterplotR)
 suppressPackageStartupMessages({
     library(SingleCellExperiment)
     library(SummarizedExperiment)
@@ -33,7 +33,7 @@ suppressPackageStartupMessages({
         library(SpatialExperiment)
     }
 })
-packageVersion("reglScatterplot")
+packageVersion("reglScatterplotR")
 ```
 
 # Synthetic SingleCellExperiment

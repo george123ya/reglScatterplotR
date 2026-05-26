@@ -1,6 +1,6 @@
 ## dev/02_quantization.R - verify the U16 encoders round-trip cleanly.
 
-library(reglScatterplot)
+library(reglScatterplotR)
 
 decode_u16 <- function(b64, prefix, scale = 1, offset = 0) {
     body <- sub(paste0("^", prefix), "", b64)
@@ -12,19 +12,19 @@ decode_u16 <- function(b64, prefix, scale = 1, offset = 0) {
 
 ## ---- Bipolar [-1, 1] (X / Y) -----------------------------------------------
 x <- seq(-1, 1, length.out = 1001)
-b <- reglScatterplot:::.toBase64U16(x)
+b <- reglScatterplotR:::.toBase64U16(x)
 xback <- decode_u16(b, "base64u16:", scale = 32767.5, offset = -1)
 cat(sprintf("[-1, 1]  max abs error: %.2e\n", max(abs(xback - x))))
 
 ## ---- Unit [0, 1] (continuous z) --------------------------------------------
 u <- seq(0, 1, length.out = 1001)
-b <- reglScatterplot:::.toBase64U16Unit(u)
+b <- reglScatterplotR:::.toBase64U16Unit(u)
 uback <- decode_u16(b, "base64u16u:", scale = 65535, offset = 0)
 cat(sprintf("[0, 1]   max abs error: %.2e\n", max(abs(uback - u))))
 
 ## ---- Integer (categorical z) -----------------------------------------------
 i <- as.integer(c(0, 1, 5, 99, 65535))
-b <- reglScatterplot:::.toBase64U16Int(i)
+b <- reglScatterplotR:::.toBase64U16Int(i)
 iback <- decode_u16(b, "base64u16i:", scale = 1, offset = 0)
 stopifnot(identical(as.integer(iback), i))
 cat("[int]    exact round-trip OK\n")

@@ -6,7 +6,7 @@ Self-contained snippets you can paste into an R session.
 
 ```r
 library(SingleCellExperiment)
-library(reglScatterplot)
+library(reglScatterplotR)
 
 # Assume `sce` already has reducedDim(sce, "UMAP") and colData(sce)$cluster
 reglScatterplot(sce, x = "UMAP", colorBy = "cluster")
@@ -47,7 +47,7 @@ reglScatterplot(de_results, x = "logCPM", y = "logFC",
 
 ```r
 library(shiny)
-library(reglScatterplot)
+library(reglScatterplotR)
 
 ui <- fluidPage(
     fluidRow(

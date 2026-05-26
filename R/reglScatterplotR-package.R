@@ -1,4 +1,4 @@
-#' reglScatterplot: Interactive WebGL Scatterplots for R
+#' reglScatterplotR: Interactive WebGL Scatterplots for R
 #'
 #' Lightweight `htmlwidgets` interface to the JavaScript
 #' `regl-scatterplot` library, rendering millions of points in the browser via

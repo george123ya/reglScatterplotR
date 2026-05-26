@@ -1,4 +1,4 @@
 library(testthat)
-library(reglScatterplot)
+library(reglScatterplotR)
 
-test_check("reglScatterplot")
+test_check("reglScatterplotR")
