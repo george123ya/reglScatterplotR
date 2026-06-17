@@ -25,6 +25,12 @@
   (`X` / a layer / `"raw"`). AnnData read via `zellkonverter::readH5AD()`
   continues to use the `SingleCellExperiment` path. `anndataR` added to
   `Suggests`.
+* **`filterBy` now shows interactive sliders outside Shiny.** A range-filter
+  panel (one dual slider per numeric `filterBy` column) is rendered in the
+  widget for standalone HTML / R Markdown / the Viewer, so dragging a range
+  filters the points live. Previously the slider UI only existed when a Shiny
+  app supplied it; the data was loaded but nothing was shown. Tightened the
+  legend so its height fits its contents.
 * **`title` is now drawn on screen.** Previously the `title` argument only
   appeared in PNG/SVG/PDF exports; it now renders as a centred caption at the
   top of the plot (coloured with `axisColor`).

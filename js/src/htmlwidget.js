@@ -224,6 +224,81 @@ function recalcAndApplyFilters(entry) {
     }
 }
 
+// In-widget range-filter panel. `filterBy` ships per-variable numeric vectors;
+// in Shiny the host app supplies sliders that drive `activeStrainers` via the
+// update_filter_range handler, but in standalone HTML / R Markdown / the Viewer
+// there was no UI at all. This builds a small draggable-free panel of dual
+// range sliders that write the same `activeStrainers` and re-run the filter, so
+// `filterBy` is interactive everywhere.
+function createFilterPanel(container, entry, fontSize) {
+    const data = entry && entry.filterData;
+    if (!data) return;
+    const keys = Object.keys(data);
+    if (!keys.length || entry._filterPanel) return;
+
+    const bg = entry.legendBg || '#ffffff';
+    const txt = entry.legendText || '#000000';
+    const border = 'rgba(128,128,128,0.35)';
+    const fam = '-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,Arial,sans-serif';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'sp-filter-wrapper';
+    wrap.style.cssText = 'position:absolute; top:10px; left:10px; z-index:998;' +
+        'background:' + bg + '; color:' + txt + '; border:1px solid ' + border + ';' +
+        'border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:' + fontSize + 'px;' +
+        'min-width:160px; max-width:240px; max-height:min(90%,360px); overflow:auto; font-family:' + fam + ';';
+
+    const header = document.createElement('div');
+    header.textContent = 'Filters';
+    header.style.cssText = 'padding:6px 10px; font-weight:700; text-transform:uppercase;' +
+        'letter-spacing:0.5px; font-size:' + (fontSize - 1) + 'px; border-bottom:1px solid ' + border + ';';
+    wrap.appendChild(header);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:8px 10px;';
+    wrap.appendChild(body);
+
+    const fmt = (x) => (Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(2));
+
+    keys.forEach((key) => {
+        const arr = data[key];
+        let lo = Infinity, hi = -Infinity;
+        for (let i = 0; i < arr.length; i++) { const v = arr[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+        if (!isFinite(lo) || !isFinite(hi)) return;
+        if (lo === hi) hi = lo + 1;
+        const step = (hi - lo) / 200 || 1;
+
+        const item = document.createElement('div');
+        item.style.cssText = 'margin-bottom:10px;';
+        const label = document.createElement('div');
+        label.style.cssText = 'margin-bottom:3px; white-space:nowrap;';
+        const minIn = document.createElement('input');
+        const maxIn = document.createElement('input');
+        [minIn, maxIn].forEach((inp) => {
+            inp.type = 'range'; inp.min = lo; inp.max = hi; inp.step = step;
+            inp.style.cssText = 'width:100%; display:block; margin:2px 0; accent-color:#3b82f6;';
+        });
+        minIn.value = lo; maxIn.value = hi;
+        const draw = () => { label.textContent = key + ': ' + fmt(+minIn.value) + ' – ' + fmt(+maxIn.value); };
+        draw();
+        const apply = () => {
+            let a = +minIn.value, b = +maxIn.value;
+            if (a > b) { if (document.activeElement === minIn) { b = a; maxIn.value = b; } else { a = b; minIn.value = a; } }
+            draw();
+            if (a <= lo && b >= hi) delete globalRegistry.activeStrainers[key];
+            else globalRegistry.activeStrainers[key] = [a, b];
+            globalRegistry.forEach((e) => { if (e.plot && !e.plot._destroyed) recalcAndApplyFilters(e); });
+        };
+        minIn.addEventListener('input', apply);
+        maxIn.addEventListener('input', apply);
+        item.appendChild(label); item.appendChild(minIn); item.appendChild(maxIn);
+        body.appendChild(item);
+    });
+
+    container.appendChild(wrap);
+    entry._filterPanel = wrap;
+}
+
 function syncCameraAcrossPlots(sourcePlotId) {
   const sourceEntry = globalRegistry.get(sourcePlotId);
   if (!sourceEntry || !sourceEntry.syncGroup || !sourceEntry.plot || sourceEntry.plot._destroyed) return;
@@ -449,10 +524,10 @@ HTMLWidgets.widget({
                 
                 .sp-legend-header {
                     display: flex; align-items: center; justify-content: space-between;
-                    padding: 6px 10px; border-bottom: 1px solid var(--border-color, #e2e8f0);
+                    padding: 4px 10px; border-bottom: 1px solid var(--border-color, #e2e8f0);
                     background: var(--bg-panel, #f8fafc);
                     border-radius: 8px 8px 0 0; cursor: move; user-select: none;
-                    min-height: 28px;
+                    min-height: 22px;
                     white-space: nowrap; /* Prevent header wrap */
                 }
                 .sp-legend-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-sub, #64748b); letter-spacing: 0.5px; }
@@ -463,7 +538,7 @@ HTMLWidgets.widget({
                     display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;
                 }
                 
-                .sp-legend-content { padding: 8px; overflow-y: auto; max-height: 300px; }
+                .sp-legend-content { padding: 6px; overflow-y: auto; max-height: 300px; }
                 
                 .sp-legend-item { 
                     transition: opacity 0.2s; user-select: none; 
@@ -755,7 +830,7 @@ HTMLWidgets.widget({
                 legendData.names.forEach((name, i) => {
                     const row = document.createElement('div');
                     row.className = 'sp-legend-item';
-                    row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; padding: 2px 4px; position: relative; cursor: pointer;';
+                    row.style.cssText = 'display: flex; align-items: center; margin-bottom: 2px; padding: 1px 4px; position: relative; cursor: pointer;';
                     
                     const myVar = legendData.var_name;
                     const mySelections = globalRegistry.categorySelections.get(myVar);
@@ -1575,6 +1650,14 @@ HTMLWidgets.widget({
                 const showDownload = xData.enableDownload === true ||
                     (xData.enableDownload !== false && (!inIframe || inShiny));
                 if (showDownload) createDownloadButton(container);
+
+                // In-widget filter sliders for `filterBy` variables. Skip in
+                // Shiny, where the host app drives `activeStrainers` through its
+                // own UI via the update_filter_range message handler.
+                if (xData.filter_data && Object.keys(xData.filter_data).length &&
+                    typeof Shiny === 'undefined') {
+                    createFilterPanel(container, globalRegistry.get(plotId), xData.legendFontSize || 12);
+                }
                 prevNumPoints = n;
                 updateLegendUI(); 
                 recalcAndApplyFilters(globalRegistry.get(plotId));
