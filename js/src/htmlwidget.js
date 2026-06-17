@@ -431,7 +431,11 @@ HTMLWidgets.widget({
                     width: fit-content !important;  /* Force fit content */
                     min-width: 100px;               /* Prevent total collapse */
                     max-width: 250px;               /* Prevent exaggeration */
-                    max-height: 90%;
+                    /* Cap height so the legend never spans the whole plot when
+                       the container height is indefinite (e.g. a knitted Rmd):
+                       a percentage alone collapses to unbounded there, so pair
+                       it with a hard pixel ceiling. */
+                    max-height: min(90%, 360px);
                     overflow: hidden;
                 }
                 
@@ -509,7 +513,7 @@ HTMLWidgets.widget({
         }, false);
 
         let plot, renderer, svg, xAxisG, yAxisG, xAxis, yAxis, xScale, yScale;
-        let xDomainOrig, yDomainOrig, tooltip;
+        let xDomainOrig, yDomainOrig, tooltip, titleDiv;
         let d3Available = false;
         let dataBuffers = { x: null, y: null, z: null };
         let legendDiv = null;
@@ -723,7 +727,13 @@ HTMLWidgets.widget({
             legendWrapper.style.color = txt;
             
             const titleEl = legendWrapper.querySelector('.sp-legend-title');
-            if(titleEl) titleEl.innerText = legendData.title || "Legend";
+            if(titleEl) {
+                titleEl.innerText = legendData.title || "Legend";
+                // The stylesheet pins this to var(--text-sub), which RStudio's
+                // dark Qt theme overrides to a light colour (the "white legend
+                // title" bug). Force it to the configured legend text colour.
+                titleEl.style.color = txt;
+            }
 
             legendDiv.innerHTML = '';
             legendDiv.style.fontSize = fontSize + 'px';
@@ -1317,6 +1327,26 @@ HTMLWidgets.widget({
                 
                 loader.style.display = 'none';
 
+                // Plot title. The `title` argument was previously only drawn
+                // into PNG/SVG exports, never shown on screen - render it as a
+                // centred overlay at the top of the plot.
+                if (xData.title) {
+                    if (!titleDiv) {
+                        titleDiv = document.createElement('div');
+                        titleDiv.className = 'sp-plot-title';
+                        titleDiv.style.cssText = 'position:absolute; top:6px; left:0; right:0; ' +
+                            'text-align:center; pointer-events:none; z-index:40; font-weight:600; ' +
+                            'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,Arial,sans-serif;';
+                        container.appendChild(titleDiv);
+                    }
+                    titleDiv.textContent = xData.title;
+                    titleDiv.style.color = xData.axisColor || '#333333';
+                    titleDiv.style.fontSize = ((xData.fontSize || 12) + 3) + 'px';
+                    titleDiv.style.display = 'block';
+                } else if (titleDiv) {
+                    titleDiv.style.display = 'none';
+                }
+
                 const updateAxesFromCamera = function() {
                     if (!xData.showAxes || !plot || !xScale || !yScale) return;
                     const evt = { xScale: plot.get('xScale'), yScale: plot.get('yScale') };
@@ -1402,6 +1432,22 @@ HTMLWidgets.widget({
                 let syncGroup = (existingEntry && existingEntry.syncGroup) ? existingEntry.syncGroup : null;
                 if (!syncGroup && globalRegistry.currentSyncGroupSet && globalRegistry.currentSyncGroupSet.has(plotId)) {
                     syncGroup = globalRegistry.currentSyncGroupSet;
+                }
+                // Client-side sync (no Shiny): when `syncPlots` lists this plot
+                // and others, union them all into one shared group so panning /
+                // zooming any one drives the rest. In Shiny this is normally set
+                // up by the `my_scatterplot_sync` message handler instead.
+                if (!syncGroup && Array.isArray(xData.syncPlots) && xData.syncPlots.length > 1 &&
+                    xData.syncPlots.indexOf(plotId) !== -1) {
+                    syncGroup = globalRegistry.currentSyncGroupSet || new Set();
+                    xData.syncPlots.forEach(id => syncGroup.add(id));
+                    globalRegistry.currentSyncGroupSet = syncGroup;
+                    globalRegistry.globalSyncEnabled = true;
+                    // Back-fill any plots in this group that already registered.
+                    xData.syncPlots.forEach(id => {
+                        const e = globalRegistry.get(id);
+                        if (e) e.syncGroup = syncGroup;
+                    });
                 }
 
                 globalRegistry.set(plotId, { 
@@ -1509,8 +1555,12 @@ HTMLWidgets.widget({
                     try { return window.parent !== window; } catch (e) { return true; }
                 })();
                 const inShiny = (typeof Shiny !== 'undefined');
-                const showDownload = xData.enableDownload !== false &&
-                    (!inIframe || inShiny);
+                // An explicit `enableDownload = TRUE` always wins - the user
+                // opted in, so honour it even inside an iframe (RStudio Viewer,
+                // knitted-HTML preview, Jupyter). The iframe heuristic only
+                // governs the unset/auto case.
+                const showDownload = xData.enableDownload === true ||
+                    (xData.enableDownload !== false && (!inIframe || inShiny));
                 if (showDownload) createDownloadButton(container);
                 prevNumPoints = n;
                 updateLegendUI(); 

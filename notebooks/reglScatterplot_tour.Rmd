@@ -1,0 +1,309 @@
+---
+title: "reglScatterplotR — full feature tour"
+author: "reglScatterplotR"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(reglScatterplotR)
+```
+
+> **How to use this notebook.** Run it chunk-by-chunk in RStudio (each plot
+> appears in the Viewer / inline) or knit the whole thing to a self-contained
+> HTML report. Every browser dependency is bundled, so it works **offline**.
+> Chunks that need an optional package (Seurat, AnnData, SCE, …) skip
+> gracefully with a message if it is not installed.
+
+# 0. The bundled dataset
+
+A 3,400-cell synthetic single-cell embedding ships with the package — no
+download needed.
+
+```{r dataset}
+data(reglScatterExample)
+str(reglScatterExample)
+```
+
+# 1. Basics
+
+## 1.1 Minimal plot (data.frame)
+
+```{r basic}
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2")
+```
+
+## 1.2 Colour by a categorical column
+
+```{r color-categorical}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2",
+  colorBy = "celltype",
+  legendTitle = "Cell type"
+)
+```
+
+## 1.3 Colour by a continuous column
+
+```{r color-continuous}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2",
+  colorBy = "CD3D",
+  continuousPalette = "viridis",
+  legendTitle = "CD3D"
+)
+```
+
+## 1.4 Fixed point colour (no mapping)
+
+```{r fixed-color}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2",
+  pointColor = "#0072B2"
+)
+```
+
+# 2. Point appearance
+
+## 2.1 Point size & opacity
+
+```{r size-opacity}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  pointSize = 6, opacity = 0.5
+)
+```
+
+## 2.2 `pixelRatio` — crisp output in the RStudio Viewer
+
+The Viewer reports `devicePixelRatio = 1` on HiDPI screens, so the default now
+super-samples (`max(devicePixelRatio, 2)`). Override for memory or extra
+sharpness:
+
+```{r pixelratio}
+# Extra-sharp (e.g. for screenshots / export)
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  pixelRatio = 3
+)
+```
+
+# 3. Palettes
+
+## 3.1 Built-in categorical / continuous palettes
+
+```{r palettes-builtin}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "percentMito",
+  continuousPalette = "magma", legendTitle = "% mito"
+)
+```
+
+## 3.2 Custom colours for categories
+
+```{r palette-custom}
+celltypes <- levels(reglScatterExample$celltype)
+my_cols <- setNames(
+  grDevices::hcl.colors(length(celltypes), "Dark 3"),
+  celltypes
+)
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  customColors = my_cols
+)
+```
+
+# 4. Filtering
+
+## 4.1 Per-variable filter sliders (`filterBy`)
+
+`filterBy` takes a data.frame of numeric columns that become interactive
+range filters in the widget.
+
+```{r filter}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  filterBy = reglScatterExample[, c("nCount", "nFeature", "percentMito")]
+)
+```
+
+# 5. Axes, ranges & framing
+
+## 5.1 Titles, axis labels, tooltip
+
+```{r labels}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  title = "PBMC — UMAP", xlab = "UMAP 1", ylab = "UMAP 2",
+  showAxes = TRUE, showTooltip = TRUE
+)
+```
+
+## 5.2 Manual ranges, padding, auto-fit
+
+```{r ranges}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  rangePadding = 0.3, autoFit = TRUE
+)
+```
+
+## 5.3 Continuous colour scaling: `vmin`/`vmax`, `centerZero`
+
+```{r vmin-vmax}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "CD3D",
+  vmin = 0, vmax = 4, continuousPalette = "viridis"
+)
+```
+
+# 6. Theming the canvas & legend
+
+```{r theme}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  backgroundColor = "#111418", axisColor = "#cccccc",
+  legendBg = "#1c2128", legendText = "#e6edf3",
+  legendPosition = "bottom-left", draggableLegend = TRUE,
+  fontSize = 13, legendFontSize = 12
+)
+```
+
+# 7. Export (PNG / SVG / PDF)
+
+`enableDownload = TRUE` adds an in-plot export button.
+
+```{r export}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  enableDownload = TRUE
+)
+```
+
+# 8. Other input objects
+
+The same `reglScatterplot()` call dispatches on the object class.
+
+## 8.1 Plain numeric matrix
+
+```{r matrix}
+m <- as.matrix(reglScatterExample[, c("UMAP_1", "UMAP_2")])
+reglScatterplot(m, colorBy = reglScatterExample$celltype)
+```
+
+## 8.2 SingleCellExperiment
+
+```{r sce}
+if (requireNamespace("SingleCellExperiment", quietly = TRUE)) {
+  set.seed(1)
+  n <- 500
+  sce <- SingleCellExperiment::SingleCellExperiment(
+    assays = list(logcounts = matrix(rnorm(10 * n), nrow = 10,
+                  dimnames = list(paste0("g", 1:10), NULL))),
+    colData = S4Vectors::DataFrame(
+      cluster = factor(sample(letters[1:4], n, replace = TRUE)))
+  )
+  SingleCellExperiment::reducedDim(sce, "UMAP") <- matrix(rnorm(2 * n), ncol = 2)
+  reglScatterplot(sce, x = "UMAP", colorBy = "cluster")
+} else {
+  message("SingleCellExperiment not installed — skipping.")
+}
+```
+
+## 8.3 SpatialExperiment (spatial coords)
+
+```{r spe}
+if (requireNamespace("SpatialExperiment", quietly = TRUE)) {
+  set.seed(2)
+  n <- 400
+  spe <- SpatialExperiment::SpatialExperiment(
+    assays = list(counts = matrix(rpois(5 * n, 3), nrow = 5)),
+    spatialCoords = matrix(runif(2 * n, 0, 100), ncol = 2,
+                           dimnames = list(NULL, c("x", "y"))),
+    colData = S4Vectors::DataFrame(region = factor(sample(1:3, n, TRUE)))
+  )
+  reglScatterplot(spe, x = "spatial", colorBy = "region")
+} else {
+  message("SpatialExperiment not installed — skipping.")
+}
+```
+
+## 8.4 Seurat
+
+```{r seurat}
+if (requireNamespace("SeuratObject", quietly = TRUE)) {
+  set.seed(3)
+  n <- 400
+  counts <- matrix(rpois(20 * n, 5), nrow = 20,
+                   dimnames = list(paste0("Gene", 1:20), paste0("Cell", 1:n)))
+  so <- SeuratObject::CreateSeuratObject(counts = counts)
+  so$celltype <- factor(sample(c("A", "B", "C"), n, replace = TRUE))
+  emb <- matrix(rnorm(2 * n), ncol = 2,
+                dimnames = list(colnames(so), c("UMAP_1", "UMAP_2")))
+  so[["umap"]] <- SeuratObject::CreateDimReducObject(
+    embeddings = emb, key = "UMAP_", assay = "RNA")
+  reglScatterplot(so, x = "umap", colorBy = "celltype")
+} else {
+  message("SeuratObject not installed — skipping.")
+}
+```
+
+## 8.5 AnnData (anndataR)
+
+```{r anndata}
+if (requireNamespace("anndataR", quietly = TRUE)) {
+  set.seed(4)
+  n <- 400; g <- 15
+  ad <- anndataR::AnnData(
+    X = matrix(rpois(n * g, 2), nrow = n,
+               dimnames = list(NULL, paste0("Gene", 1:g))),
+    obs = data.frame(celltype = factor(sample(c("X", "Y", "Z"), n, TRUE))),
+    obsm = list(X_umap = matrix(rnorm(2 * n), ncol = 2))
+  )
+  reglScatterplot(ad, x = "UMAP", colorBy = "celltype")
+} else {
+  message("anndataR not installed — skipping.")
+}
+```
+
+# 9. Synchronised plots
+
+Two plots sharing a `syncPlots` group pan/zoom together (most useful inside
+Shiny — see `?enableReglScatterplotSync`).
+
+```{r sync, eval=FALSE}
+p1 <- reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
+  colorBy = "celltype", plotId = "p1", syncPlots = c("p1", "p2"))
+p2 <- reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
+  colorBy = "CD3D", plotId = "p2", syncPlots = c("p1", "p2"))
+htmltools::tagList(p1, p2)
+```
+
+# 10. Shiny
+
+In Shiny use `reglScatterplotOutput()` / `renderReglScatterplot()`, and
+`enableReglScatterplotSync()` / `updateReglPointSize()` to drive plots from the
+server. See `?reglScatterplotOutput`.
+
+```{r shiny, eval=FALSE}
+library(shiny)
+ui <- fluidPage(reglScatterplotOutput("plot", height = "600px"))
+server <- function(input, output, session) {
+  output$plot <- renderReglScatterplot({
+    reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
+      colorBy = "celltype", plotId = "plot")
+  })
+}
+shinyApp(ui, server)
+```
+
+# Session info
+
+```{r sessioninfo}
+sessionInfo()
+```

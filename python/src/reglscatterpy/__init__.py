@@ -17,4 +17,4 @@ from ._extract import PlotData, extract
 from .scatterplot import scatterplot
 
 __all__ = ["scatterplot", "extract", "PlotData", "__version__"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

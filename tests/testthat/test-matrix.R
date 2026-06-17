@@ -34,8 +34,12 @@ test_that("Monocle3 cell_data_set routes through the SCE dispatch", {
     ## existing inherits(<>, 'SingleCellExperiment') dispatch and the SCE
     ## accessors (reducedDim, colData, assay) all apply unchanged. Build a real
     ## cds when monocle3 is available; skip otherwise.
+    ## monocle3 is GitHub-only (not on CRAN/Bioconductor), so it cannot live in
+    ## Suggests. Reach it without a static `monocle3::` reference or a
+    ## `library()` call, both of which would trip R CMD check's unstated-
+    ## dependency NOTE; skip cleanly when it is absent.
     testthat::skip_if_not_installed("monocle3")
-    suppressPackageStartupMessages(library(monocle3))
+    new_cell_data_set <- getExportedValue("monocle3", "new_cell_data_set")
 
     set.seed(3L)
     g <- 12L

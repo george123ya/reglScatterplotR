@@ -33,6 +33,16 @@ const builds = [
     // to resolve them from node_modules.
     banner: { js: "/* reglScatterplot widget - bundled, no CDN. Source: js/src/ */" },
   },
+  {
+    // Python (anywidget) bundle: an ESM module that loads the SAME widget via a
+    // tiny HTMLWidgets shim and drives it directly. Shipped in the reglscatterpy
+    // package so R and Python render the identical widget.
+    ...shared,
+    entryPoints: ["src/anywidget.js"],
+    outfile: "../python/src/reglscatterpy/static/widget.js",
+    format: "esm",
+    banner: { js: "/* reglScatterplot anywidget bundle - bundled, no CDN. Source: js/src/ */" },
+  },
 ];
 
 if (watch) {

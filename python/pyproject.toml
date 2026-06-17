@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "reglscatterpy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Interactive WebGL scatterplots for single-cell data (AnnData/MuData/SpatialData) in Jupyter, VS Code and Shiny for Python"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -21,17 +21,19 @@ classifiers = [
 dependencies = [
     "numpy",
     "pandas",
+    # The default renderer: our own anywidget driving the SAME compiled widget
+    # the R package ships, so R and Python plots are pixel-identical.
+    "anywidget>=0.9",
 ]
 
 [project.optional-dependencies]
-# The renderer. Kept optional so the extraction layer can be imported/tested
-# without a JS/widget stack.
+# Alternative backend: jupyter-scatter (the JS author's binding). Optional.
 render = ["jupyter-scatter>=0.18"]
 anndata = ["anndata"]
 mudata = ["mudata"]
 spatial = ["spatialdata"]
 all = ["jupyter-scatter>=0.18", "anndata", "mudata", "spatialdata"]
-dev = ["pytest", "anndata", "scipy"]
+dev = ["pytest", "anndata", "scipy", "anywidget>=0.9"]
 
 [project.urls]
 Homepage = "https://github.com/george123ya/reglScatterplotR"
@@ -40,6 +42,8 @@ Homepage = "https://github.com/george123ya/reglScatterplotR"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reglscatterpy"]
+# Ship the compiled anywidget bundle (built from ../js by esbuild).
+artifacts = ["src/reglscatterpy/static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

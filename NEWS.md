@@ -25,6 +25,20 @@
   (`X` / a layer / `"raw"`). AnnData read via `zellkonverter::readH5AD()`
   continues to use the `SingleCellExperiment` path. `anndataR` added to
   `Suggests`.
+* **`title` is now drawn on screen.** Previously the `title` argument only
+  appeared in PNG/SVG/PDF exports; it now renders as a centred caption at the
+  top of the plot (coloured with `axisColor`).
+* **Client-side plot sync without Shiny.** Passing the same `syncPlots` group to
+  several plots now links their pan/zoom in plain HTML / R Markdown / the
+  Viewer, not just in Shiny (where the server message handler set it up before).
+* **Legend title colour.** The legend header text now follows `legendText`
+  instead of a CSS variable that RStudio's dark Qt theme could override to a
+  near-invisible colour (the "white legend title" bug). The legend also has a
+  hard height cap so it can't span the whole plot when the container height is
+  indefinite (e.g. a knitted R Markdown).
+* **Download button honours an explicit `enableDownload = TRUE`.** The export
+  button was hidden inside any iframe (RStudio Viewer, knitted-HTML preview,
+  Jupyter); an explicit opt-in now always shows it.
 * **Crisp rendering in the RStudio Viewer (`pixelRatio`).** The widget now
   renders the WebGL backing store at `max(devicePixelRatio, 2)` by default
   instead of relying on `window.devicePixelRatio`, which the RStudio Viewer (an
