@@ -25,6 +25,13 @@
   (`X` / a layer / `"raw"`). AnnData read via `zellkonverter::readH5AD()`
   continues to use the `SingleCellExperiment` path. `anndataR` added to
   `Suggests`.
+* **No CDN at runtime - the widget now works offline.** All browser
+  dependencies (`regl-scatterplot`, `d3`, `pickr`, `html2canvas`, `jspdf`)
+  are bundled into `inst/htmlwidgets/reglScatterplot.js` with esbuild, instead
+  of being fetched from esm.sh / cdnjs via dynamic `import()` and `<script>`
+  injection. Standalone HTML reports, the RStudio Viewer and firewalled /
+  air-gapped environments now render without a network connection. Build
+  sources and instructions live in `js/` (excluded from the package build).
 
 # reglScatterplot 0.99.0
 

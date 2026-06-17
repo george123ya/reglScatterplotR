@@ -1,6 +1,10 @@
 name: reglScatterplot
-version: 0.99.0
+version: 0.99.1
 title: Interactive WebGL Scatterplot Widget
-description: Scalable scatterplot using regl-scatterplot with multi-sync support.
+description: >-
+  Scalable scatterplot using regl-scatterplot with multi-sync support.
+  All browser dependencies (regl-scatterplot, d3, pickr, html2canvas, jspdf)
+  are bundled into reglScatterplot.js by esbuild - no CDN is contacted at
+  runtime. Rebuild with: cd js && npm install && npm run build.
 license: MIT
 url: https://github.com/george123ya/reglScatterplotR

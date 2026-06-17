@@ -16,5 +16,6 @@
 ^dev$
 ^data-raw$
 ^python$
+^js$
 ^wiki$
 ^.*\.BiocCheck$

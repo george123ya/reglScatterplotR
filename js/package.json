@@ -1,0 +1,21 @@
+{
+  "name": "reglscatterplot-js",
+  "version": "0.99.1",
+  "private": true,
+  "type": "module",
+  "description": "Build sources for the reglScatterplot widget (R htmlwidget + Python anywidget). All browser deps are bundled locally - no CDN at runtime.",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "dependencies": {
+    "@simonwep/pickr": "1.9.1",
+    "d3": "^7.9.0",
+    "html2canvas": "1.4.1",
+    "jspdf": "2.5.1",
+    "regl-scatterplot": "1.14.1"
+  }
+}
