@@ -56,10 +56,14 @@ reglScatterplot(
 )
 }
 \arguments{
-\item{data}{Optional \code{data.frame} (or any object that supports \code{[[}).
-When supplied, \code{x}, \code{y}, \code{colorBy}, \code{groupBy} and the columns named in
-\code{filterBy} are looked up by name in \code{data}. When \code{NULL}, these arguments
-must be vectors of matching length.}
+\item{data}{Optional input object. Accepts a \code{data.frame} (or anything that
+supports \code{[[}), a numeric coordinate \code{matrix}, a \code{SingleCellExperiment}, a
+\code{SpatialExperiment}, or a \code{Seurat} object. For a \code{data.frame}, \code{x}, \code{y},
+\code{colorBy}, \code{groupBy} and the columns named in \code{filterBy} are looked up by
+name. For a \code{matrix}, the first two columns are used as coordinates unless
+\code{x} / \code{y} give column indices or names. When \code{NULL}, these arguments must
+be vectors of matching length. For single-cell objects, see the
+\emph{Single-cell data structures} section below.}
 
 \item{x, y}{Either column names (when \code{data} is non-NULL) or numeric vectors
 giving point coordinates. For \code{SingleCellExperiment} / \code{SpatialExperiment}
@@ -171,15 +175,25 @@ Renders a \code{regl-scatterplot} widget capable of displaying millions of
 points in the browser. Works in standalone HTML, the RStudio Viewer,
 Shiny applications and Jupyter notebooks (via IRkernel).
 }
-\section{Bioconductor data structures}{
+\section{Single-cell data structures}{
 
 When \code{data} is a \code{SingleCellExperiment} or \code{SpatialExperiment}, the
 function reroutes through a helper that pulls coordinates from
-\code{reducedDim()} (e.g. \code{dimred = "UMAP"}) - or from \code{spatialCoords()} when
-\code{dimred = "spatial"} for a \code{SpatialExperiment}. \code{colorBy} and \code{groupBy}
+\code{reducedDim()} (e.g. \code{x = "UMAP"}) - or from \code{spatialCoords()} when
+\code{x = "spatial"} for a \code{SpatialExperiment}. \code{colorBy} and \code{groupBy}
 may then name either a \code{colData} column or a feature in \code{rownames(sce)}
 (in the latter case \code{assay()} is read - \code{"logcounts"} by default, or the
 assay named by the \code{assay} argument).
+
+When \code{data} is a \code{Seurat} object, coordinates come from \code{Embeddings()} for
+the reduction named by \code{x} (default \code{"UMAP"}, matched case-insensitively;
+falls back to the first of \code{umap}/\code{tsne}/\code{pca} present). \code{colorBy} and
+\code{groupBy} are resolved with \code{FetchData()}, so they may name either a
+\code{meta.data} column or a feature. For Seurat, the \code{assay} argument selects
+the \emph{layer} to read for features (\code{"data"}, i.e. log-normalised, by
+default; works with both v4 \code{slot}s and v5 \code{layer}s); to colour by a
+non-default modality such as ADT, set \code{Seurat::DefaultAssay()} before
+calling.
 }
 
 \examples{
@@ -191,8 +205,10 @@ df <- data.frame(
     score = runif(2000)
 )
 reglScatterplot(df, x = "x", y = "y", colorBy = "group")
-reglScatterplot(df, x = "x", y = "y", colorBy = "score",
-                continuousPalette = "magma")
+reglScatterplot(df,
+    x = "x", y = "y", colorBy = "score",
+    continuousPalette = "magma"
+)
 
 \donttest{
 # Single-cell UMAP from a SingleCellExperiment

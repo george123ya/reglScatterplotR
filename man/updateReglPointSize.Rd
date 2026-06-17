@@ -21,6 +21,6 @@ Update the point size of one or more scatterplots
 }
 \examples{
 if (interactive()) {
-  updateReglPointSize("plotA", size = 5)
+    updateReglPointSize("plotA", size = 5)
 }
 }

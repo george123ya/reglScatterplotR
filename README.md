@@ -58,6 +58,18 @@ reglScatterplot(df, x = "x", y = "y", colorBy = "score",
                 vmin = "p1", vmax = "p99")
 ```
 
+### Try it with the bundled dataset
+
+```r
+# Ships with the package - no download needed
+data(reglScatterExample)
+reglScatterplot(reglScatterExample,
+                x = "UMAP_1", y = "UMAP_2", colorBy = "celltype")
+reglScatterplot(reglScatterExample,
+                x = "UMAP_1", y = "UMAP_2", colorBy = "CD3D",
+                continuousPalette = "viridis", vmax = "p99")
+```
+
 ### SingleCellExperiment one-liner
 
 ```r
@@ -75,6 +87,17 @@ reglScatterplot(sce, x = "UMAP", colorBy = "MS4A1")
 library(SpatialExperiment)
 reglScatterplot(spe, x = "spatial", colorBy = "celltype",
                 autoFit = TRUE)
+```
+
+### Seurat object
+
+```r
+library(Seurat)
+# seurat_obj already has an "umap" reduction + meta.data
+reglScatterplot(seurat_obj, x = "umap", colorBy = "seurat_clusters")
+
+# colorBy resolves meta.data columns OR features (via FetchData)
+reglScatterplot(seurat_obj, x = "umap", colorBy = "MS4A1")
 ```
 
 ## Documentation

@@ -31,14 +31,16 @@ applications and interactive R Markdown documents.
 }
 \examples{
 if (interactive()) {
-  ui <- shiny::fluidPage(reglScatterplotOutput("plot"))
-  server <- function(input, output, session) {
-    output$plot <- renderReglScatterplot({
-      reglScatterplot(iris, x = "Sepal.Length", y = "Sepal.Width",
-                      colorBy = "Species")
-    })
-  }
-  shiny::shinyApp(ui, server)
+    ui <- shiny::fluidPage(reglScatterplotOutput("plot"))
+    server <- function(input, output, session) {
+        output$plot <- renderReglScatterplot({
+            reglScatterplot(iris,
+                x = "Sepal.Length", y = "Sepal.Width",
+                colorBy = "Species"
+            )
+        })
+    }
+    shiny::shinyApp(ui, server)
 }
 
 }

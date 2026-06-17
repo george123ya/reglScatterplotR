@@ -28,6 +28,6 @@ reactive context.
 }
 \examples{
 if (interactive()) {
-  enableReglScatterplotSync(c("plotA", "plotB"))
+    enableReglScatterplotSync(c("plotA", "plotB"))
 }
 }

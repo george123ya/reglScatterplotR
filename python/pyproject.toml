@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reglscatterpy"
+version = "0.1.0"
+description = "Interactive WebGL scatterplots for single-cell data (AnnData/MuData/SpatialData) in Jupyter, VS Code and Shiny for Python"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "George Muñoz" }]
+keywords = ["scatterplot", "webgl", "single-cell", "anndata", "scanpy", "visualization"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Framework :: Jupyter",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "numpy",
+    "pandas",
+]
+
+[project.optional-dependencies]
+# The renderer. Kept optional so the extraction layer can be imported/tested
+# without a JS/widget stack.
+render = ["jupyter-scatter>=0.18"]
+anndata = ["anndata"]
+mudata = ["mudata"]
+spatial = ["spatialdata"]
+all = ["jupyter-scatter>=0.18", "anndata", "mudata", "spatialdata"]
+dev = ["pytest", "anndata", "scipy"]
+
+[project.urls]
+Homepage = "https://github.com/george123ya/reglScatterplotR"
+"Bug Tracker" = "https://github.com/george123ya/reglScatterplotR/issues"
+"R package" = "https://github.com/george123ya/reglScatterplotR"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reglscatterpy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

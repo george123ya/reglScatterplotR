@@ -14,5 +14,7 @@
 ^codecov\.yml$
 ^LICENSE\.md$
 ^dev$
+^data-raw$
+^python$
 ^wiki$
 ^.*\.BiocCheck$

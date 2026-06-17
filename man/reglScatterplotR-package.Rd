@@ -41,5 +41,10 @@ Useful links:
 \author{
 \strong{Maintainer}: George Muñoz \email{george.munoz@unmsm.edu.pe} (\href{https://orcid.org/0009-0007-3765-9967}{ORCID})
 
+Authors:
+\itemize{
+  \item George Muñoz \email{george.munoz@unmsm.edu.pe} (\href{https://orcid.org/0009-0007-3765-9967}{ORCID})
+}
+
 }
 \keyword{internal}

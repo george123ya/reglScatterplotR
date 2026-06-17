@@ -8,10 +8,14 @@
 #' points in the browser. Works in standalone HTML, the RStudio Viewer,
 #' Shiny applications and Jupyter notebooks (via IRkernel).
 #'
-#' @param data Optional `data.frame` (or any object that supports `[[`).
-#'   When supplied, `x`, `y`, `colorBy`, `groupBy` and the columns named in
-#'   `filterBy` are looked up by name in `data`. When `NULL`, these arguments
-#'   must be vectors of matching length.
+#' @param data Optional input object. Accepts a `data.frame` (or anything that
+#'   supports `[[`), a numeric coordinate `matrix`, a `SingleCellExperiment`, a
+#'   `SpatialExperiment`, or a `Seurat` object. For a `data.frame`, `x`, `y`,
+#'   `colorBy`, `groupBy` and the columns named in `filterBy` are looked up by
+#'   name. For a `matrix`, the first two columns are used as coordinates unless
+#'   `x` / `y` give column indices or names. When `NULL`, these arguments must
+#'   be vectors of matching length. For single-cell objects, see the
+#'   *Single-cell data structures* section below.
 #' @param x,y Either column names (when `data` is non-NULL) or numeric vectors
 #'   giving point coordinates. For `SingleCellExperiment` / `SpatialExperiment`
 #'   inputs, pass the `reducedDim` name as `x` (e.g. `"UMAP"`); `y` is
@@ -86,14 +90,24 @@
 #'
 #' @return An `htmlwidgets` object of class `"reglScatterplot"`.
 #'
-#' @section Bioconductor data structures:
+#' @section Single-cell data structures:
 #' When `data` is a `SingleCellExperiment` or `SpatialExperiment`, the
 #' function reroutes through a helper that pulls coordinates from
-#' `reducedDim()` (e.g. `dimred = "UMAP"`) - or from `spatialCoords()` when
-#' `dimred = "spatial"` for a `SpatialExperiment`. `colorBy` and `groupBy`
+#' `reducedDim()` (e.g. `x = "UMAP"`) - or from `spatialCoords()` when
+#' `x = "spatial"` for a `SpatialExperiment`. `colorBy` and `groupBy`
 #' may then name either a `colData` column or a feature in `rownames(sce)`
 #' (in the latter case `assay()` is read - `"logcounts"` by default, or the
 #' assay named by the `assay` argument).
+#'
+#' When `data` is a `Seurat` object, coordinates come from `Embeddings()` for
+#' the reduction named by `x` (default `"UMAP"`, matched case-insensitively;
+#' falls back to the first of `umap`/`tsne`/`pca` present). `colorBy` and
+#' `groupBy` are resolved with `FetchData()`, so they may name either a
+#' `meta.data` column or a feature. For Seurat, the `assay` argument selects
+#' the *layer* to read for features (`"data"`, i.e. log-normalised, by
+#' default; works with both v4 `slot`s and v5 `layer`s); to colour by a
+#' non-default modality such as ADT, set `Seurat::DefaultAssay()` before
+#' calling.
 #'
 #' @examples
 #' set.seed(1L)
@@ -163,6 +177,111 @@ reglScatterplot <- function(data = NULL,
                             filteredIndices = NULL,
                             selectedIndices = NULL,
                             syncState = TRUE) {
+    ## ---- plain coordinate matrix dispatch -------------------------------
+    ## A bare numeric matrix (e.g. reducedDim output, `prcomp$x`, a UMAP
+    ## embedding) is the most common "I just have coordinates" case. Take the
+    ## first two columns by default; `x`/`y` may override with column indices
+    ## or names. `colorBy` / `groupBy` stay vectors here.
+    if (!is.null(data) && is.matrix(data) && is.numeric(data)) {
+        if (ncol(data) < 2L) {
+            stop("A coordinate matrix needs at least two columns.",
+                call. = FALSE
+            )
+        }
+        .pickCol <- function(sel, default) {
+            if (missing(sel) || is.null(sel)) {
+                return(data[, default])
+            }
+            if (is.character(sel) && length(sel) == 1L) {
+                if (is.null(colnames(data)) || !sel %in% colnames(data)) {
+                    stop(sprintf("Column '%s' not found in the matrix.", sel),
+                        call. = FALSE
+                    )
+                }
+                return(data[, sel])
+            }
+            if (is.numeric(sel) && length(sel) == 1L) {
+                return(data[, as.integer(sel)])
+            }
+            ## Anything else (a raw vector) is passed straight through.
+            sel
+        }
+        x_in <- if (missing(x)) NULL else x
+        y_in <- if (missing(y)) NULL else y
+        return(reglScatterplot(
+            data = NULL,
+            x = .pickCol(x_in, 1L), y = .pickCol(y_in, 2L),
+            colorBy = colorBy, groupBy = groupBy, assay = assay,
+            filterBy = filterBy,
+            pointSize = pointSize, opacity = opacity, pointColor = pointColor,
+            categoricalPalette = categoricalPalette,
+            continuousPalette = continuousPalette,
+            customPalette = customPalette, customColors = customColors,
+            pointLabels = pointLabels,
+            xlab = xlab, ylab = ylab, title = title, legendTitle = legendTitle,
+            xrange = xrange, yrange = yrange, rangePadding = rangePadding,
+            vmin = vmin, vmax = vmax, centerZero = centerZero,
+            showAxes = showAxes, showTooltip = showTooltip,
+            backgroundColor = backgroundColor, axisColor = axisColor,
+            legendBg = legendBg, legendText = legendText,
+            legendPosition = legendPosition, draggableLegend = draggableLegend,
+            width = width, height = height, enableDownload = enableDownload,
+            plotId = plotId, syncPlots = syncPlots, elementId = elementId,
+            dataVersion = dataVersion, masterId = masterId, autoFit = autoFit,
+            margins = margins, fontSize = fontSize,
+            legendFontSize = legendFontSize,
+            filteredIndices = filteredIndices,
+            selectedIndices = selectedIndices, syncState = syncState
+        ))
+    }
+
+    ## ---- Seurat object dispatch -----------------------------------------
+    if (!is.null(data) && inherits(data, "Seurat")) {
+        reduction <- if (!missing(x) && is.character(x) && length(x) == 1L) {
+            x
+        } else {
+            "UMAP"
+        }
+        return(.reglScatterplotFromSeurat(
+            object = data,
+            dimred = reduction,
+            colorBy = colorBy,
+            groupBy = groupBy,
+            assay = assay,
+            xlab = if (xlab == "X") NULL else xlab,
+            ylab = if (ylab == "Y") NULL else ylab,
+            filterBy = filterBy,
+            pointSize = pointSize, opacity = opacity,
+            pointColor = pointColor,
+            categoricalPalette = categoricalPalette,
+            continuousPalette = continuousPalette,
+            customPalette = customPalette,
+            customColors = customColors,
+            pointLabels = pointLabels,
+            title = title, legendTitle = legendTitle,
+            xrange = xrange, yrange = yrange,
+            vmin = vmin, vmax = vmax, centerZero = centerZero,
+            showAxes = showAxes, showTooltip = showTooltip,
+            backgroundColor = backgroundColor,
+            axisColor = axisColor,
+            legendBg = legendBg, legendText = legendText,
+            legendPosition = legendPosition,
+            draggableLegend = draggableLegend,
+            width = width, height = height,
+            enableDownload = enableDownload,
+            plotId = plotId, syncPlots = syncPlots,
+            elementId = elementId,
+            dataVersion = dataVersion,
+            masterId = masterId,
+            autoFit = autoFit,
+            margins = margins,
+            fontSize = fontSize, legendFontSize = legendFontSize,
+            filteredIndices = filteredIndices,
+            selectedIndices = selectedIndices,
+            syncState = syncState
+        ))
+    }
+
     ## ---- Bioconductor object dispatch -----------------------------------
     if (!is.null(data) &&
         (inherits(data, "SingleCellExperiment") ||

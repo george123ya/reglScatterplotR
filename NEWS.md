@@ -1,3 +1,23 @@
+# reglScatterplot 0.99.1
+
+* **Bundled example dataset.** `data(reglScatterExample)` loads a small
+  (3,400-cell) synthetic single-cell-style UMAP `data.frame` with a
+  categorical cell-type column and a continuous marker gradient, so users
+  can plot something immediately without downloading data or installing a
+  Suggests package. Used by the examples, vignette and tests.
+* **Seurat support.** `reglScatterplot()` now dispatches on `Seurat`
+  objects: coordinates come from `Embeddings()` (reduction matched
+  case-insensitively, default `"UMAP"` with `umap`/`tsne`/`pca` fallback),
+  and `colorBy` / `groupBy` resolve against `meta.data` columns or features
+  via `FetchData()`. Works with both Seurat v4 (`slot`) and v5 (`layer`)
+  objects. `SeuratObject` added to `Suggests`.
+* **Plain matrix input.** `reglScatterplot(m)` accepts a numeric coordinate
+  matrix (e.g. a UMAP embedding or `prcomp()$x`), using the first two
+  columns by default; `x` / `y` may select other columns by index or name.
+* **Monocle3.** A `cell_data_set` is a `SingleCellExperiment` subclass, so it
+  flows through the existing SCE dispatch unchanged - now covered by a test
+  and documented.
+
 # reglScatterplot 0.99.0
 
 * First Bioconductor submission.
