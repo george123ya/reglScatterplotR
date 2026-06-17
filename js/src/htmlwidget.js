@@ -241,16 +241,17 @@ function createFilterPanel(container, entry, fontSize) {
     const border = 'rgba(128,128,128,0.35)';
     const fam = '-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,Arial,sans-serif';
 
+    const accent = '#3b82f6';
     const wrap = document.createElement('div');
     wrap.className = 'sp-filter-wrapper';
     wrap.style.cssText = 'position:absolute; top:10px; left:10px; z-index:998;' +
         'background:' + bg + '; color:' + txt + '; border:1px solid ' + border + ';' +
         'border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:' + fontSize + 'px;' +
-        'min-width:160px; max-width:240px; max-height:min(90%,360px); overflow:auto; font-family:' + fam + ';';
+        'width:230px; max-height:min(92%,440px); overflow-y:auto; font-family:' + fam + ';';
 
     const header = document.createElement('div');
     header.textContent = 'Filters';
-    header.style.cssText = 'padding:6px 10px; font-weight:700; text-transform:uppercase;' +
+    header.style.cssText = 'padding:5px 10px; font-weight:700; text-transform:uppercase;' +
         'letter-spacing:0.5px; font-size:' + (fontSize - 1) + 'px; border-bottom:1px solid ' + border + ';';
     wrap.appendChild(header);
 
@@ -258,7 +259,10 @@ function createFilterPanel(container, entry, fontSize) {
     body.style.cssText = 'padding:8px 10px;';
     wrap.appendChild(body);
 
-    const fmt = (x) => (Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(2));
+    const fmt = (x) => (Math.abs(x) >= 100 ? x.toFixed(0) : (Math.abs(x) >= 1 ? x.toFixed(1) : x.toFixed(3)));
+    const NB = 36;       // histogram bins
+    const HH = 38;       // histogram height (px)
+    const TH = 14;       // slider track/handle height (px)
 
     keys.forEach((key) => {
         const arr = data[key];
@@ -266,33 +270,113 @@ function createFilterPanel(container, entry, fontSize) {
         for (let i = 0; i < arr.length; i++) { const v = arr[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
         if (!isFinite(lo) || !isFinite(hi)) return;
         if (lo === hi) hi = lo + 1;
-        const step = (hi - lo) / 200 || 1;
+        const span = hi - lo;
+
+        // distribution histogram
+        const bins = new Array(NB).fill(0);
+        for (let i = 0; i < arr.length; i++) {
+            let b = Math.floor((arr[i] - lo) / span * NB);
+            if (b < 0) b = 0; if (b >= NB) b = NB - 1;
+            bins[b]++;
+        }
+        const maxC = Math.max.apply(null, bins) || 1;
+        // sqrt scale so small-count bins stay visible next to tall ones
+        const barH = (c) => Math.max(2, Math.round(Math.sqrt(c / maxC) * HH));
+
+        let curLo = lo, curHi = hi;
 
         const item = document.createElement('div');
-        item.style.cssText = 'margin-bottom:10px;';
+        item.style.cssText = 'margin-bottom:12px;';
         const label = document.createElement('div');
-        label.style.cssText = 'margin-bottom:3px; white-space:nowrap;';
-        const minIn = document.createElement('input');
-        const maxIn = document.createElement('input');
-        [minIn, maxIn].forEach((inp) => {
-            inp.type = 'range'; inp.min = lo; inp.max = hi; inp.step = step;
-            inp.style.cssText = 'width:100%; display:block; margin:2px 0; accent-color:#3b82f6;';
-        });
-        minIn.value = lo; maxIn.value = hi;
-        const draw = () => { label.textContent = key + ': ' + fmt(+minIn.value) + ' – ' + fmt(+maxIn.value); };
-        draw();
+        label.style.cssText = 'margin-bottom:4px; white-space:nowrap; font-weight:600;';
+        item.appendChild(label);
+
+        const area = document.createElement('div');
+        area.style.cssText = 'position:relative; height:' + (HH + TH) + 'px; touch-action:none;';
+
+        const histo = document.createElement('div');
+        histo.style.cssText = 'position:absolute; top:0; left:0; right:0; height:' + HH +
+            'px; display:flex; align-items:flex-end; gap:1px;';
+        const barEls = [];
+        for (let i = 0; i < NB; i++) {
+            const bar = document.createElement('div');
+            bar.style.cssText = 'flex:1; height:' + barH(bins[i]) + 'px; background:' + accent +
+                '; border-radius:1px 1px 0 0; transition:opacity 0.08s;';
+            histo.appendChild(bar); barEls.push(bar);
+        }
+        area.appendChild(histo);
+
+        const trackY = (TH - 4) / 2;
+        const track = document.createElement('div');
+        track.style.cssText = 'position:absolute; left:0; right:0; bottom:' + trackY +
+            'px; height:4px; background:' + border + '; border-radius:2px;';
+        area.appendChild(track);
+        const sel = document.createElement('div');
+        sel.style.cssText = 'position:absolute; bottom:' + trackY + 'px; height:4px; background:' +
+            accent + '; border-radius:2px;';
+        area.appendChild(sel);
+
+        const mkHandle = () => {
+            const h = document.createElement('div');
+            h.style.cssText = 'position:absolute; bottom:0; width:12px; height:' + TH +
+                'px; margin-left:-6px; background:#fff; border:2px solid ' + accent +
+                '; border-radius:50%; cursor:ew-resize; box-shadow:0 1px 3px rgba(0,0,0,0.35);';
+            area.appendChild(h); return h;
+        };
+        const hLo = mkHandle(), hHi = mkHandle();
+
+        item.appendChild(area);
+        body.appendChild(item);
+
+        const frac = (v) => (v - lo) / span;
+        const redraw = () => {
+            const fLo = frac(curLo), fHi = frac(curHi);
+            hLo.style.left = (fLo * 100) + '%';
+            hHi.style.left = (fHi * 100) + '%';
+            sel.style.left = (fLo * 100) + '%';
+            sel.style.width = ((fHi - fLo) * 100) + '%';
+            for (let i = 0; i < NB; i++) {
+                const c = lo + (i + 0.5) / NB * span;
+                barEls[i].style.opacity = (c >= curLo && c <= curHi) ? '1' : '0.22';
+            }
+            label.textContent = key + ': ' + fmt(curLo) + ' – ' + fmt(curHi);
+        };
+        redraw();
+
         const apply = () => {
-            let a = +minIn.value, b = +maxIn.value;
-            if (a > b) { if (document.activeElement === minIn) { b = a; maxIn.value = b; } else { a = b; minIn.value = a; } }
-            draw();
-            if (a <= lo && b >= hi) delete globalRegistry.activeStrainers[key];
-            else globalRegistry.activeStrainers[key] = [a, b];
+            if (curLo <= lo && curHi >= hi) delete globalRegistry.activeStrainers[key];
+            else globalRegistry.activeStrainers[key] = [curLo, curHi];
             globalRegistry.forEach((e) => { if (e.plot && !e.plot._destroyed) recalcAndApplyFilters(e); });
         };
-        minIn.addEventListener('input', apply);
-        maxIn.addEventListener('input', apply);
-        item.appendChild(label); item.appendChild(minIn); item.appendChild(maxIn);
-        body.appendChild(item);
+
+        const startDrag = (which) => (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            const move = (e) => {
+                const rect = area.getBoundingClientRect();
+                const px = (e.touches ? e.touches[0].clientX : e.clientX);
+                let f = (px - rect.left) / rect.width;
+                f = Math.max(0, Math.min(1, f));
+                const v = lo + f * span;
+                if (which === 'lo') curLo = Math.min(v, curHi);
+                else curHi = Math.max(v, curLo);
+                redraw();
+            };
+            const up = () => {
+                document.removeEventListener('mousemove', move);
+                document.removeEventListener('mouseup', up);
+                document.removeEventListener('touchmove', move);
+                document.removeEventListener('touchend', up);
+                apply();
+            };
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', up);
+            document.addEventListener('touchmove', move, { passive: false });
+            document.addEventListener('touchend', up);
+        };
+        hLo.addEventListener('mousedown', startDrag('lo'));
+        hHi.addEventListener('mousedown', startDrag('hi'));
+        hLo.addEventListener('touchstart', startDrag('lo'), { passive: false });
+        hHi.addEventListener('touchstart', startDrag('hi'), { passive: false });
     });
 
     container.appendChild(wrap);
@@ -773,7 +857,12 @@ HTMLWidgets.widget({
                         initialLeft = rect.left - containerRect.left;
                         initialTop = rect.top - containerRect.top;
                         
+                        // Clear BOTH far-edge anchors. A bottom-/right-anchored
+                        // legend keeps `bottom`/`right` set; adding `top`/`left`
+                        // without clearing them pins all four edges and the
+                        // legend stretches to full height/width while dragging.
                         legendWrapper.style.right = 'auto';
+                        legendWrapper.style.bottom = 'auto';
                         legendWrapper.style.left = initialLeft + 'px';
                         legendWrapper.style.top = initialTop + 'px';
                     }

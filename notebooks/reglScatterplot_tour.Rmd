@@ -139,7 +139,7 @@ reglScatterplot(reglScatterExample,
 ```{r labels}
 reglScatterplot(reglScatterExample,
   x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  # title = "PBMC — UMAP", xlab = "UMAP 1", ylab = "UMAP 2",
+  title = "PBMC — UMAP", xlab = "UMAP 1", ylab = "UMAP 2",
   showAxes = TRUE, showTooltip = TRUE
 )
 ```
