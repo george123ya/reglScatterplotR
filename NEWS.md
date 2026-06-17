@@ -30,12 +30,16 @@
   top of the plot (coloured with `axisColor`).
 * **Client-side plot sync without Shiny.** Passing the same `syncPlots` group to
   several plots now links their pan/zoom in plain HTML / R Markdown / the
-  Viewer, not just in Shiny (where the server message handler set it up before).
-* **Legend title colour.** The legend header text now follows `legendText`
-  instead of a CSS variable that RStudio's dark Qt theme could override to a
-  near-invisible colour (the "white legend title" bug). The legend also has a
-  hard height cap so it can't span the whole plot when the container height is
-  indefinite (e.g. a knitted R Markdown).
+  Viewer, not just in Shiny. Plots are now keyed by their logical `plotId`
+  (previously the internal DOM id won, so a `syncPlots` group never matched and
+  sync silently did nothing outside Shiny). Verified with a headless-browser
+  test (`js/test-sync.mjs`).
+* **Legend theming.** The legend header background now follows `legendBg` (it
+  was a fixed light strip that looked wrong on dark themes), and the header
+  title text follows `legendText` instead of a CSS variable that RStudio's dark
+  Qt theme could override to a near-invisible colour (the "white legend title"
+  bug). The legend also has a hard height cap so it can't span the whole plot
+  when the container height is indefinite (e.g. a knitted R Markdown).
 * **Download button honours an explicit `enableDownload = TRUE`.** The export
   button was hidden inside any iframe (RStudio Viewer, knitted-HTML preview,
   Jupyter); an explicit opt-in now always shows it.

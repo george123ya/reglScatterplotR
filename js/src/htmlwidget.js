@@ -725,6 +725,14 @@ HTMLWidgets.widget({
             legendWrapper.style.background = bg;
             legendWrapper.style.borderColor = border;
             legendWrapper.style.color = txt;
+            // The header has its own (light) background var that does not follow
+            // legendBg - on a dark legend it shows as a white strip. Match it to
+            // the legend background so the whole legend is one colour.
+            const headerEl = legendWrapper.querySelector('.sp-legend-header');
+            if (headerEl) {
+                headerEl.style.background = bg;
+                headerEl.style.borderBottomColor = border;
+            }
             
             const titleEl = legendWrapper.querySelector('.sp-legend-title');
             if(titleEl) {
@@ -1161,7 +1169,12 @@ HTMLWidgets.widget({
                 if (xData.gene_names && Array.isArray(xData.gene_names)) console.log(`Names: ${xData.gene_names.length}`);
                 else xData.gene_names = [];
 
-                plotId = el.id || xData.plotId || ('plot_' + Math.random().toString(36).substr(2, 9));
+                // Prefer the caller's logical plotId: it's the id used by
+                // `syncPlots` and by the Shiny message handlers. Falling back to
+                // el.id first (the old behaviour) meant the registry was keyed by
+                // the DOM id, so a `syncPlots = c("p1","p2")` group never matched
+                // and cross-plot sync silently did nothing outside Shiny.
+                plotId = xData.plotId || el.id || ('plot_' + Math.random().toString(36).substr(2, 9));
                 
                 cleanUpZombies();
                 const selfEntry = globalRegistry.get(plotId);
