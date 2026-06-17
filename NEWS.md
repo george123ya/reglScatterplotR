@@ -17,6 +17,14 @@
 * **Monocle3.** A `cell_data_set` is a `SingleCellExperiment` subclass, so it
   flows through the existing SCE dispatch unchanged - now covered by a test
   and documented.
+* **AnnData support.** `reglScatterplot()` now dispatches on in-memory
+  `AnnData` objects (from `anndataR` or the `anndata` CRAN package):
+  coordinates from an `obsm` embedding (default `"UMAP"` -> `"X_umap"`,
+  matched case-insensitively), `colorBy` / `groupBy` resolved against `obs`
+  columns or `var_names` features, with `assay` selecting the layer
+  (`X` / a layer / `"raw"`). AnnData read via `zellkonverter::readH5AD()`
+  continues to use the `SingleCellExperiment` path. `anndataR` added to
+  `Suggests`.
 
 # reglScatterplot 0.99.0
 

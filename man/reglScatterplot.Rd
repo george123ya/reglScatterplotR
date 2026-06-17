@@ -58,7 +58,8 @@ reglScatterplot(
 \arguments{
 \item{data}{Optional input object. Accepts a \code{data.frame} (or anything that
 supports \code{[[}), a numeric coordinate \code{matrix}, a \code{SingleCellExperiment}, a
-\code{SpatialExperiment}, or a \code{Seurat} object. For a \code{data.frame}, \code{x}, \code{y},
+\code{SpatialExperiment}, a \code{Seurat} object, or an in-memory \code{AnnData} (from the
+\code{anndataR} or \code{anndata} packages). For a \code{data.frame}, \code{x}, \code{y},
 \code{colorBy}, \code{groupBy} and the columns named in \code{filterBy} are looked up by
 name. For a \code{matrix}, the first two columns are used as coordinates unless
 \code{x} / \code{y} give column indices or names. When \code{NULL}, these arguments must
@@ -194,6 +195,15 @@ the \emph{layer} to read for features (\code{"data"}, i.e. log-normalised, by
 default; works with both v4 \code{slot}s and v5 \code{layer}s); to colour by a
 non-default modality such as ADT, set \code{Seurat::DefaultAssay()} before
 calling.
+
+When \code{data} is an in-memory \code{AnnData} (from \code{anndataR} or the \code{anndata}
+CRAN package), coordinates come from an \code{obsm} embedding named by \code{x}
+(default \code{"UMAP"}, auto-prefixed to the scanpy-style \code{"X_umap"} and matched
+case-insensitively). \code{colorBy} / \code{groupBy} resolve against \code{obs} columns or
+\code{var_names} features, and \code{assay} selects the layer to read for features
+(\code{NULL} -> \code{X}, a layer name, or \code{"raw"}). An AnnData read with
+\code{zellkonverter::readH5AD()} arrives as a \code{SingleCellExperiment} and uses the
+SCE path above instead.
 }
 
 \examples{

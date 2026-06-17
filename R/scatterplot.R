@@ -10,7 +10,8 @@
 #'
 #' @param data Optional input object. Accepts a `data.frame` (or anything that
 #'   supports `[[`), a numeric coordinate `matrix`, a `SingleCellExperiment`, a
-#'   `SpatialExperiment`, or a `Seurat` object. For a `data.frame`, `x`, `y`,
+#'   `SpatialExperiment`, a `Seurat` object, or an in-memory `AnnData` (from the
+#'   `anndataR` or `anndata` packages). For a `data.frame`, `x`, `y`,
 #'   `colorBy`, `groupBy` and the columns named in `filterBy` are looked up by
 #'   name. For a `matrix`, the first two columns are used as coordinates unless
 #'   `x` / `y` give column indices or names. When `NULL`, these arguments must
@@ -108,6 +109,15 @@
 #' default; works with both v4 `slot`s and v5 `layer`s); to colour by a
 #' non-default modality such as ADT, set `Seurat::DefaultAssay()` before
 #' calling.
+#'
+#' When `data` is an in-memory `AnnData` (from `anndataR` or the `anndata`
+#' CRAN package), coordinates come from an `obsm` embedding named by `x`
+#' (default `"UMAP"`, auto-prefixed to the scanpy-style `"X_umap"` and matched
+#' case-insensitively). `colorBy` / `groupBy` resolve against `obs` columns or
+#' `var_names` features, and `assay` selects the layer to read for features
+#' (`NULL` -> `X`, a layer name, or `"raw"`). An AnnData read with
+#' `zellkonverter::readH5AD()` arrives as a `SingleCellExperiment` and uses the
+#' SCE path above instead.
 #'
 #' @examples
 #' set.seed(1L)
@@ -245,6 +255,53 @@ reglScatterplot <- function(data = NULL,
         return(.reglScatterplotFromSeurat(
             object = data,
             dimred = reduction,
+            colorBy = colorBy,
+            groupBy = groupBy,
+            assay = assay,
+            xlab = if (xlab == "X") NULL else xlab,
+            ylab = if (ylab == "Y") NULL else ylab,
+            filterBy = filterBy,
+            pointSize = pointSize, opacity = opacity,
+            pointColor = pointColor,
+            categoricalPalette = categoricalPalette,
+            continuousPalette = continuousPalette,
+            customPalette = customPalette,
+            customColors = customColors,
+            pointLabels = pointLabels,
+            title = title, legendTitle = legendTitle,
+            xrange = xrange, yrange = yrange,
+            vmin = vmin, vmax = vmax, centerZero = centerZero,
+            showAxes = showAxes, showTooltip = showTooltip,
+            backgroundColor = backgroundColor,
+            axisColor = axisColor,
+            legendBg = legendBg, legendText = legendText,
+            legendPosition = legendPosition,
+            draggableLegend = draggableLegend,
+            width = width, height = height,
+            enableDownload = enableDownload,
+            plotId = plotId, syncPlots = syncPlots,
+            elementId = elementId,
+            dataVersion = dataVersion,
+            masterId = masterId,
+            autoFit = autoFit,
+            margins = margins,
+            fontSize = fontSize, legendFontSize = legendFontSize,
+            filteredIndices = filteredIndices,
+            selectedIndices = selectedIndices,
+            syncState = syncState
+        ))
+    }
+
+    ## ---- AnnData (in-memory R6) dispatch --------------------------------
+    if (!is.null(data) && .isAnnDataR6(data)) {
+        basis <- if (!missing(x) && is.character(x) && length(x) == 1L) {
+            x
+        } else {
+            "UMAP"
+        }
+        return(.reglScatterplotFromAnnData(
+            ad = data,
+            dimred = basis,
             colorBy = colorBy,
             groupBy = groupBy,
             assay = assay,

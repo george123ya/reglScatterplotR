@@ -100,6 +100,17 @@ reglScatterplot(seurat_obj, x = "umap", colorBy = "seurat_clusters")
 reglScatterplot(seurat_obj, x = "umap", colorBy = "MS4A1")
 ```
 
+### AnnData
+
+```r
+# In-memory AnnData from anndataR or the anndata package
+library(anndataR)
+ad <- read_h5ad("pbmc.h5ad")
+reglScatterplot(ad, x = "umap", colorBy = "leiden")  # obs column or a gene
+
+# (AnnData read with zellkonverter::readH5AD() is an SCE - use x = "UMAP")
+```
+
 ## Documentation
 
 | Topic                              | Where                                                |
