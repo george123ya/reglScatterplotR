@@ -1,5 +1,5 @@
 name: reglScatterplot
-version: 0.99.1
+version: 0.99.2
 title: Interactive WebGL Scatterplot Widget
 description: >-
   Scalable scatterplot using regl-scatterplot with multi-sync support.

@@ -1,4 +1,4 @@
-# reglScatterplot 0.99.1
+# reglScatterplot 0.99.2
 
 * **Bundled example dataset.** `data(reglScatterExample)` loads a small
   (3,400-cell) synthetic single-cell-style UMAP `data.frame` with a
