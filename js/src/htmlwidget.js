@@ -47,9 +47,7 @@ if (!window.__myScatterplotRegistry) {
   window.__myScatterplotRegistry.indexFilters = new Map(); 
   window.__myScatterplotRegistry.categorySelections = new Map(); 
   
-  window.__myScatterplotRegistry.n_points = 0; 
-  
-  console.log('[SP-DEBUG] Global registry initialized (Committee Model)');
+  window.__myScatterplotRegistry.n_points = 0; // placeholder set per render
 }
 
 if (!window.__spUnsubscribers) { window.__spUnsubscribers = {}; }
@@ -112,19 +110,14 @@ const decodeBase64 = (base64Str) => {
 const cleanUpZombies = () => {
     globalRegistry.forEach((entry, pid) => {
         if (entry.canvas && !entry.canvas.isConnected) {
-            console.log(`[SP-DEBUG] 🧟 Zombie detected: ${pid}. Cleaning up...`);
+            // Detached canvas: persist its camera and free the WebGL context.
             if (entry.plot && !entry.plot._destroyed) {
-                try { 
-                    entry.savedCameraView = cloneCamera(entry.plot.get('cameraView')); 
+                try {
+                    entry.savedCameraView = cloneCamera(entry.plot.get('cameraView'));
                 } catch(e) {}
             }
             if (entry.plot) {
-                try { 
-                    entry.plot.destroy(); 
-                    console.log(`[SP-DEBUG] 🗑️ Destroyed WebGL context for ${pid}`);
-                } catch(e) { 
-                    console.warn(`[SP-DEBUG] Failed to destroy ${pid}:`, e); 
-                }
+                try { entry.plot.destroy(); } catch(e) {}
             }
             entry.plot = null;
             entry.canvas = null;
@@ -249,15 +242,53 @@ function createFilterPanel(container, entry, fontSize) {
         'border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:' + fontSize + 'px;' +
         'width:230px; max-height:min(92%,440px); overflow-y:auto; font-family:' + fam + ';';
 
+    // Header with a minimize toggle, mirroring the legend.
     const header = document.createElement('div');
-    header.textContent = 'Filters';
-    header.style.cssText = 'padding:5px 10px; font-weight:700; text-transform:uppercase;' +
-        'letter-spacing:0.5px; font-size:' + (fontSize - 1) + 'px; border-bottom:1px solid ' + border + ';';
+    header.style.cssText = 'display:flex; align-items:center; justify-content:space-between;' +
+        'padding:4px 10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;' +
+        'font-size:' + (fontSize - 1) + 'px; border-bottom:1px solid ' + border + '; cursor:move; user-select:none;';
+    const hTitle = document.createElement('span');
+    hTitle.textContent = 'Filters';
+    const minBtn = document.createElement('button');
+    minBtn.textContent = '−';
+    minBtn.style.cssText = 'border:none; background:transparent; color:inherit; cursor:pointer;' +
+        'font-size:16px; line-height:1; padding:0 2px;';
+    header.appendChild(hTitle); header.appendChild(minBtn);
     wrap.appendChild(header);
 
     const body = document.createElement('div');
     body.style.cssText = 'padding:8px 10px;';
     wrap.appendChild(body);
+
+    // Minimize: collapse to just the header.
+    minBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const hidden = body.style.display === 'none';
+        body.style.display = hidden ? '' : 'none';
+        minBtn.textContent = hidden ? '−' : '+';
+    });
+
+    // Drag by the header (same approach as the legend): clear all far-edge
+    // anchors first so the panel never stretches between opposite edges.
+    let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    header.addEventListener('mousedown', (e) => {
+        if (e.target === minBtn) return;
+        dragging = true; sx = e.clientX; sy = e.clientY;
+        const r = wrap.getBoundingClientRect();
+        const cr = container.getBoundingClientRect();
+        ox = r.left - cr.left; oy = r.top - cr.top;
+        wrap.style.right = 'auto'; wrap.style.bottom = 'auto';
+        wrap.style.left = ox + 'px'; wrap.style.top = oy + 'px';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const maxL = container.clientWidth - wrap.offsetWidth;
+        const maxT = container.clientHeight - wrap.offsetHeight;
+        wrap.style.left = Math.max(0, Math.min(ox + e.clientX - sx, maxL)) + 'px';
+        wrap.style.top = Math.max(0, Math.min(oy + e.clientY - sy, maxT)) + 'px';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; });
 
     const fmt = (x) => (Math.abs(x) >= 100 ? x.toFixed(0) : (Math.abs(x) >= 1 ? x.toFixed(1) : x.toFixed(3)));
     const NB = 36;       // histogram bins
@@ -776,11 +807,6 @@ HTMLWidgets.widget({
                 legendWrapper.appendChild(header);
                 legendWrapper.appendChild(content);
                 container.appendChild(legendWrapper);
-
-                
-                // 2. Insert SVG initially
-                // header.innerHTML = `<span class="sp-legend-title">Legend</span>
-                //                     <button class="sp-legend-btn" title="Minimize">${iconMinus}</button>`;
 
                 const minBtn = header.querySelector('.sp-legend-btn');
                 minBtn.onclick = (e) => {
@@ -1312,8 +1338,6 @@ HTMLWidgets.widget({
 
         const instance = {
             renderValue: async function(xData) {
-                console.log("[SP-DEBUG] renderValue called for:", xData.plotId);
-
                 if (typeof xData.syncState !== 'undefined') {
                     globalRegistry.globalSyncEnabled = xData.syncState;
                 }
@@ -1329,9 +1353,8 @@ HTMLWidgets.widget({
                 }
                 const fSize = xData.fontSize || 12;
 
-                loader.style.display = 'block'; 
-                if (xData.gene_names && Array.isArray(xData.gene_names)) console.log(`Names: ${xData.gene_names.length}`);
-                else xData.gene_names = [];
+                loader.style.display = 'block';
+                if (!Array.isArray(xData.gene_names)) xData.gene_names = [];
 
                 // Prefer the caller's logical plotId: it's the id used by
                 // `syncPlots` and by the Shiny message handlers. Falling back to
@@ -1450,9 +1473,7 @@ HTMLWidgets.widget({
                 }
 
                 const rect = container.getBoundingClientRect();
-                // const cW = rect.width - margin.left - margin.right; 
-                // const cH = rect.height - margin.top - margin.bottom;
-                canvas.style.top = margin.top+'px'; 
+                canvas.style.top = margin.top+'px';
                 canvas.style.left = margin.left+'px';
 
                 // Load regl-scatterplot once and cache on window so multiple

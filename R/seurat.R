@@ -61,8 +61,7 @@
                     stop(sprintf(
                         paste0(
                             "Could not resolve '%s' in the Seurat object ",
-                            "(not a meta.data column or a feature). ",
-                            "Original error: %s"
+                            "(not a meta.data column or a feature): %s"
                         ),
                         paste(vars, collapse = ", "), conditionMessage(e2)
                     ), call. = FALSE)

@@ -4,7 +4,6 @@
 [![R-CMD-check](https://github.com/george123ya/reglScatterplotR/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/george123ya/reglScatterplotR/actions/workflows/R-CMD-check.yaml)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![BioC status](https://bioconductor.org/shields/build/devel/bioc/reglScatterplotR.svg)](https://bioconductor.org/checkResults/devel/bioc-LATEST/reglScatterplotR/)
 [![Codecov test coverage](https://codecov.io/gh/george123ya/reglScatterplotR/branch/main/graph/badge.svg)](https://app.codecov.io/gh/george123ya/reglScatterplotR)
 <!-- badges: end -->
 

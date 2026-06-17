@@ -6,7 +6,7 @@ bibentry(
     author  = person("George", "Muñoz"),
     year    = format(Sys.Date(), "%Y"),
     note    = sprintf("R package version %s",
-                      utils::packageVersion("reglScatterplotR")),
+                      if (!is.null(meta$Version)) meta$Version else "unknown"),
     url     = "https://github.com/george123ya/reglScatterplotR"
 )
 
