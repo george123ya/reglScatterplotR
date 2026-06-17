@@ -1272,7 +1272,21 @@ HTMLWidgets.widget({
                 // widget instances share a single import and the same renderer
                 // (the latter is required by the library for context sharing).
                 const reglMod = window.__reglScatterplotMod; // bundled locally
-                if (!renderer) { renderer = reglMod.createRenderer(); }
+                // Resolve the device pixel ratio used for the WebGL backing
+                // store. regl-scatterplot otherwise defaults to
+                // window.devicePixelRatio, which the RStudio Viewer (an embedded
+                // Qt WebEngine pane) reports as 1 even on HiDPI displays - the
+                // canvas is then rendered at low resolution and upscaled, which
+                // looks soft. Quality-first default: render at >=2x (supersample)
+                // unless the caller overrides `pixelRatio` or we are in
+                // performanceMode (very large data), where we honour the true
+                // ratio to keep the pixel count down.
+                const dpr = (xData.pixelRatio != null)
+                    ? xData.pixelRatio
+                    : (xData.performanceMode
+                        ? (window.devicePixelRatio || 1)
+                        : Math.max(window.devicePixelRatio || 1, 2));
+                if (!renderer) { renderer = reglMod.createRenderer({ pixelRatio: dpr }); }
                 const intXScale = d3.scaleLinear().domain([-1,1]).range([0,cW]);
                 const intYScale = d3.scaleLinear().domain([-1,1]).range([cH,0]);
                 let initialAspectRatio = null;
@@ -1281,10 +1295,10 @@ HTMLWidgets.widget({
                 const createScatterplot = reglMod.default;
                 
                 try {
-                    plot = createScatterplot({ 
-                        renderer, canvas, width: cW, height: cH, 
-                        xScale: intXScale, yScale: intYScale, pointSize: xData.options.size, 
-                        aspectRatio: initialAspectRatio, performanceMode: xData.performanceMode 
+                    plot = createScatterplot({
+                        renderer, canvas, width: cW, height: cH, pixelRatio: dpr,
+                        xScale: intXScale, yScale: intYScale, pointSize: xData.options.size,
+                        aspectRatio: initialAspectRatio, performanceMode: xData.performanceMode
                     });
                     const newConf = { pointSize: xData.options.size, pointColor: xData.options.pointColor, opacity: xData.options.opacity };
                     newConf.colorBy = xData.options.colorBy ? xData.options.colorBy : null;

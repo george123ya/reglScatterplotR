@@ -15,6 +15,7 @@ reglScatterplot(
   pointSize = NULL,
   opacity = NULL,
   pointColor = NULL,
+  pixelRatio = NULL,
   categoricalPalette = "Set1",
   continuousPalette = "viridis",
   customPalette = NULL,
@@ -90,6 +91,14 @@ small data; \code{pointSize = 1}, \code{opacity = 1} once \code{n > 500000}).}
 
 \item{pointColor}{Optional fixed hex colour. When given, overrides
 \code{colorBy}.}
+
+\item{pixelRatio}{Optional numeric device-pixel-ratio for the WebGL backing
+store. When \code{NULL} (default) the widget renders at \code{max(devicePixelRatio, 2)} for crisp output - this matters in the RStudio Viewer, an embedded
+browser that reports \code{devicePixelRatio = 1} even on HiDPI screens, making
+the plot look soft at the library default. For very large data
+(\code{n > 500000}, performance mode) the true ratio is used to keep the pixel
+count down. Pass an explicit value (e.g. \code{1} to save GPU memory, \code{3} for
+extra-sharp export-quality rendering) to override.}
 
 \item{categoricalPalette, continuousPalette}{Names of fallback palettes
 (a \code{RColorBrewer} name and a \code{viridisLite} name respectively).}

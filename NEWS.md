@@ -25,6 +25,14 @@
   (`X` / a layer / `"raw"`). AnnData read via `zellkonverter::readH5AD()`
   continues to use the `SingleCellExperiment` path. `anndataR` added to
   `Suggests`.
+* **Crisp rendering in the RStudio Viewer (`pixelRatio`).** The widget now
+  renders the WebGL backing store at `max(devicePixelRatio, 2)` by default
+  instead of relying on `window.devicePixelRatio`, which the RStudio Viewer (an
+  embedded browser) reports as `1` even on HiDPI screens - the cause of the
+  previously soft / low-quality look in the Viewer. A new `pixelRatio` argument
+  overrides this (e.g. `pixelRatio = 1` to save GPU memory, `3` for
+  export-quality sharpness); very large data (`n > 500000`) keeps the true ratio
+  to bound the pixel count.
 * **No CDN at runtime - the widget now works offline.** All browser
   dependencies (`regl-scatterplot`, `d3`, `pickr`, `html2canvas`, `jspdf`)
   are bundled into `inst/htmlwidgets/reglScatterplot.js` with esbuild, instead

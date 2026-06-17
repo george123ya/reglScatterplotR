@@ -11,6 +11,12 @@ test_that("reglScatterplot accepts raw vectors when data is NULL", {
     expect_equal(w$x$n_points, 20L)
 })
 
+test_that("pixelRatio defaults to NULL and is carried into the payload", {
+    df <- data.frame(x = 1:10, y = 1:10)
+    expect_null(reglScatterplot(df, x = "x", y = "y")$x$pixelRatio)
+    expect_equal(reglScatterplot(df, x = "x", y = "y", pixelRatio = 3)$x$pixelRatio, 3)
+})
+
 test_that("reglScatterplot validates input lengths", {
     expect_error(
         reglScatterplot(x = 1:5, y = 1:4),

@@ -35,6 +35,14 @@
 #'   small data; `pointSize = 1`, `opacity = 1` once `n > 500000`).
 #' @param pointColor Optional fixed hex colour. When given, overrides
 #'   `colorBy`.
+#' @param pixelRatio Optional numeric device-pixel-ratio for the WebGL backing
+#'   store. When `NULL` (default) the widget renders at `max(devicePixelRatio,
+#'   2)` for crisp output - this matters in the RStudio Viewer, an embedded
+#'   browser that reports `devicePixelRatio = 1` even on HiDPI screens, making
+#'   the plot look soft at the library default. For very large data
+#'   (`n > 500000`, performance mode) the true ratio is used to keep the pixel
+#'   count down. Pass an explicit value (e.g. `1` to save GPU memory, `3` for
+#'   extra-sharp export-quality rendering) to override.
 #' @param categoricalPalette,continuousPalette Names of fallback palettes
 #'   (a `RColorBrewer` name and a `viridisLite` name respectively).
 #' @param customPalette,customColors Optional explicit palettes. `customColors`
@@ -153,6 +161,7 @@ reglScatterplot <- function(data = NULL,
                             pointSize = NULL,
                             opacity = NULL,
                             pointColor = NULL,
+                            pixelRatio = NULL,
                             categoricalPalette = "Set1",
                             continuousPalette = "viridis",
                             customPalette = NULL,
@@ -224,6 +233,7 @@ reglScatterplot <- function(data = NULL,
             colorBy = colorBy, groupBy = groupBy, assay = assay,
             filterBy = filterBy,
             pointSize = pointSize, opacity = opacity, pointColor = pointColor,
+            pixelRatio = pixelRatio,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette, customColors = customColors,
@@ -263,6 +273,7 @@ reglScatterplot <- function(data = NULL,
             filterBy = filterBy,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
+            pixelRatio = pixelRatio,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -310,6 +321,7 @@ reglScatterplot <- function(data = NULL,
             filterBy = filterBy,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
+            pixelRatio = pixelRatio,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -363,6 +375,7 @@ reglScatterplot <- function(data = NULL,
             filterBy = filterBy,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
+            pixelRatio = pixelRatio,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -513,6 +526,7 @@ reglScatterplot <- function(data = NULL,
         filter_data = filter_payload,
         group_data = group_payload,
         n_points = n_points,
+        pixelRatio = pixelRatio,
         options = options,
         legend = legend_data,
         x_min = xrange[1L], x_max = xrange[2L],
