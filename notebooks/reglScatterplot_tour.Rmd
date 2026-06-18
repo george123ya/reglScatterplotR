@@ -365,6 +365,12 @@ Shiny app you can write the lasso selection back onto your object's `colData`:
 # })
 ```
 
+The Python package adds convenience methods on the selection
+(`w.annotate()`, `w.composition()`, `w.diff_expression()`). In R, run the
+equivalent on `input$<id>_selected$indices` server-side with your usual tools
+(e.g. `scran::findMarkers()` / `Seurat::FindMarkers()` for DE, `table()` for
+composition).
+
 ```{r shiny, eval=FALSE}
 library(shiny)
 ui <- fluidPage(reglScatterplotOutput("plot", height = "600px"))
