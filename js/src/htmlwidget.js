@@ -722,6 +722,11 @@ HTMLWidgets.widget({
                 .sp-tb-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
                 .sp-tb-btn.on { background: #2563eb; color: #fff; }
                 .sp-tb-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+                .sp-tb-grip { display: flex; align-items: center; justify-content: center; cursor: move; opacity: 0.45; }
+                .sp-tb-grip:hover { opacity: 0.85; }
+                .sp-tb-grip svg { fill: currentColor; stroke: none; width: 16px; height: 12px; }
+                .sp-toolbar .sp-tb-grip { width: 100%; height: 11px; }
+                .sp-toolbar.sp-toolbar-h .sp-tb-grip { width: 11px; height: auto; align-self: stretch; }
                 .sp-loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; position: absolute; top: 50%; left: 50%; margin-top: -15px; margin-left: -15px; z-index: 50; display: none; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             `;
@@ -1934,8 +1939,10 @@ HTMLWidgets.widget({
                     };
                     const setMode = (mode, btn) => {
                         try { plot.set({ mouseMode: mode }); } catch (err) {}
-                        tb.querySelectorAll('.sp-tb-btn').forEach(b => b.classList.remove('on'));
-                        if (btn) btn.classList.add('on');
+                        // Manage inline colour explicitly: the active icon is white,
+                        // others use legendText (inline styles beat the .on CSS).
+                        tb.querySelectorAll('.sp-tb-btn').forEach(b => { b.classList.remove('on'); b.style.color = tbTxt; });
+                        if (btn) { btn.classList.add('on'); btn.style.color = '#fff'; }
                     };
                     const panBtn = mk('Pan / zoom', TB.pan, (b) => setMode('panZoom', b));
                     mk('Lasso select', TB.lasso, (b) => setMode('lasso', b));
@@ -1944,7 +1951,33 @@ HTMLWidgets.widget({
                         try { plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true }); } catch (err) {}
                     });
                     mk('Screenshot (PNG)', TB.cam, () => downloadPlot('png'));
-                    panBtn.classList.add('on');
+                    panBtn.classList.add('on'); panBtn.style.color = '#fff';
+
+                    // Drag grip so the toolbar can be moved off the axes.
+                    const grip = document.createElement('div');
+                    grip.className = 'sp-tb-grip';
+                    grip.title = 'Drag to move';
+                    grip.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>';
+                    grip.style.color = tbTxt;
+                    tb.insertBefore(grip, tb.firstChild);
+                    let tdr = false, tsx = 0, tsy = 0, tox = 0, toy = 0;
+                    grip.addEventListener('mousedown', (e) => {
+                        tdr = true; tsx = e.clientX; tsy = e.clientY;
+                        const r = tb.getBoundingClientRect(), cr = container.getBoundingClientRect();
+                        tox = r.left - cr.left; toy = r.top - cr.top;
+                        tb.style.right = 'auto'; tb.style.bottom = 'auto';
+                        tb.style.left = tox + 'px'; tb.style.top = toy + 'px';
+                        e.preventDefault();
+                    });
+                    document.addEventListener('mousemove', (e) => {
+                        if (!tdr) return;
+                        const maxL = container.clientWidth - tb.offsetWidth;
+                        const maxT = container.clientHeight - tb.offsetHeight;
+                        tb.style.left = Math.max(0, Math.min(tox + e.clientX - tsx, maxL)) + 'px';
+                        tb.style.top = Math.max(0, Math.min(toy + e.clientY - tsy, maxT)) + 'px';
+                    });
+                    document.addEventListener('mouseup', () => { tdr = false; });
+
                     container.appendChild(tb);
                 }
                 prevNumPoints = n;
