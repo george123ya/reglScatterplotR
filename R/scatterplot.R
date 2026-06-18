@@ -217,6 +217,18 @@ reglScatterplot <- function(data = NULL,
                             filteredIndices = NULL,
                             selectedIndices = NULL,
                             syncState = TRUE) {
+    ## ---- crosstalk SharedData ------------------------------------------
+    ## Unwrap a crosstalk::SharedData so the plot links (selection + filter)
+    ## with other crosstalk widgets (DT, plotly, leaflet) in the same document.
+    crosstalk_key <- NULL
+    crosstalk_group <- NULL
+    if (requireNamespace("crosstalk", quietly = TRUE) &&
+        methods::is(data, "SharedData")) {
+        crosstalk_key <- data$key()
+        crosstalk_group <- data$groupName()
+        data <- data$origData()
+    }
+
     ## ---- plain coordinate matrix dispatch -------------------------------
     ## A bare numeric matrix (e.g. reducedDim output, `prcomp$x`, a UMAP
     ## embedding) is the most common "I just have coordinates" case. Take the
@@ -636,7 +648,12 @@ reglScatterplot <- function(data = NULL,
         init_selected_indices = if (!is.null(selectedIndices)) as.integer(selectedIndices),
         syncState = syncState,
         colorVar = color_var_name,
-        groupVar = group_var_name
+        groupVar = group_var_name,
+        crosstalk = list(
+            on = !is.null(crosstalk_group),
+            group = crosstalk_group,
+            key = if (!is.null(crosstalk_key)) I(as.character(crosstalk_key)) else NULL
+        )
     )
 
     htmlwidgets::createWidget(
@@ -646,6 +663,7 @@ reglScatterplot <- function(data = NULL,
         height = height,
         package = "reglScatterplotR",
         elementId = elementId,
+        dependencies = if (!is.null(crosstalk_group)) crosstalk::crosstalkLibs() else NULL,
         sizingPolicy = htmlwidgets::sizingPolicy(
             defaultWidth = "100%",
             defaultHeight = 500,

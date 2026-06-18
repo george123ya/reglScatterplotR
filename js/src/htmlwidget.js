@@ -1833,6 +1833,10 @@ HTMLWidgets.widget({
                         container.dispatchEvent(new CustomEvent('sp-selection',
                             { detail: { plotId: plotId, indices: indices }, bubbles: false }));
                     } catch (e) {}
+                    // Push to a linked crosstalk group (DT / plotly / leaflet …).
+                    if (e0 && e0.ctSel && e0.ctKeys) {
+                        try { e0.ctSel.set(indices.length ? indices.map(j => e0.ctKeys[j]) : null); } catch (e) {}
+                    }
                     if (xData.zoomOnSelection && indices.length) zoomToSelection();
                 };
                 const mirrorToGroup = (apply) => {
@@ -1860,6 +1864,37 @@ HTMLWidgets.widget({
                     mirrorToGroup(pl => pl.deselect({ preventEvent: true }));
                 });
                 window.__spUnsubscribers[plotId].push(unsubDeselect);
+
+                // crosstalk: link selection + filtering with other crosstalk
+                // widgets (DT, plotly, leaflet) sharing the same group.
+                if (xData.crosstalk && xData.crosstalk.on && xData.crosstalk.key &&
+                    typeof window !== 'undefined' && window.crosstalk) {
+                    const ct = window.crosstalk;
+                    const ctKeys = xData.crosstalk.key;
+                    const keyToIdx = new Map();
+                    ctKeys.forEach((k, i) => keyToIdx.set(String(k), i));
+                    const toIdx = (vals) => (vals || [])
+                        .map(k => keyToIdx.get(String(k)))
+                        .filter(v => v !== undefined);
+                    const e0 = globalRegistry.get(plotId);
+                    const selH = new ct.SelectionHandle(xData.crosstalk.group);
+                    if (e0) { e0.ctSel = selH; e0.ctKeys = ctKeys; }
+                    selH.on('change', (e) => {
+                        if (e.sender === selH) return;       // ignore our own echo
+                        const idx = toIdx(e.value);
+                        if (idx.length) plot.select(idx, { preventEvent: true });
+                        else plot.deselect({ preventEvent: true });
+                    });
+                    const filtH = new ct.FilterHandle(xData.crosstalk.group);
+                    filtH.on('change', (e) => {
+                        const ent = globalRegistry.get(plotId);
+                        if (!ent) return;
+                        if (e.value == null) { delete ent.serverIndices; }
+                        else { ent.serverIndices = toIdx(e.value); ent.serverIndicesSet = null; }
+                        recalcAndApplyFilters(ent);
+                    });
+                    window.__spUnsubscribers[plotId].push(() => { try { selH.close(); filtH.close(); } catch (e) {} });
+                }
 
                 if (xData.showTooltip && tooltip) {
                     // Extra hover fields (tooltipBy): numeric -> raw float buffer;

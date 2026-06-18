@@ -92,7 +92,14 @@
     }
 
     if (is.character(color_vec) || is.factor(color_vec)) {
-        f <- as.factor(color_vec)
+        ## Make NA an explicit "NA" level so partially-annotated columns still
+        ## colour every point (matches the Python side).
+        if (anyNA(color_vec)) {
+            f <- addNA(as.factor(color_vec))
+            levels(f)[is.na(levels(f))] <- "NA"
+        } else {
+            f <- as.factor(color_vec)
+        }
         lvls <- levels(f)
         hex_cols <- .resolveCategoricalPalette(
             lvls, custom_colors,

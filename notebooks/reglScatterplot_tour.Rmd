@@ -335,6 +335,21 @@ htmltools::tagList(
     htmltools::div(style = "flex:1", p2)))
 ```
 
+# 10b. crosstalk (link with other widgets)
+
+Wrap the data in a `crosstalk::SharedData` and the plot links its lasso
+selection and filtering with other crosstalk widgets (DT, plotly, leaflet) in
+the same document — no Shiny needed.
+
+```{r crosstalk, eval=FALSE}
+library(crosstalk)
+sd <- SharedData$new(reglScatterExample)
+bscols(
+  reglScatterplot(sd, x = "UMAP_1", y = "UMAP_2", colorBy = "celltype"),
+  DT::datatable(sd)        # lasso the plot -> the table filters to those cells
+)
+```
+
 # 11. Shiny
 
 In Shiny use `reglScatterplotOutput()` / `renderReglScatterplot()`, and
