@@ -164,19 +164,57 @@ reglScatterplot(reglScatterExample,
 
 # 6. Theming the canvas & legend
 
+The legend is a frosted-glass card; tune its translucency with `legendOpacity`
+(0–1) and `legendBlur` (px).
+
 ```{r theme}
 reglScatterplot(reglScatterExample,
   x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
   backgroundColor = "#111418", axisColor = "#cccccc",
   legendBg = "#1c2128", legendText = "#e6edf3",
+  legendOpacity = 0.6, legendBlur = 12,
   legendPosition = "bottom-left", draggableLegend = TRUE,
   fontSize = 13, legendFontSize = 12
 )
 ```
 
-# 7. Export (PNG / SVG / PDF)
+# 7. Toolbar & encodings
 
-`enableDownload = TRUE` adds an in-plot export button.
+## 7.1 In-plot toolbar
+
+`toolbarPosition` adds pan / lasso / zoom-to-selection / reset / screenshot
+buttons (`"left"` vertical, `"top"` horizontal, `"none"` to hide).
+
+```{r toolbar}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  toolbarPosition = "left"
+)
+```
+
+## 7.2 Zoom to the lasso selection
+
+```{r zoom-on-selection}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  toolbarPosition = "left", zoomOnSelection = TRUE
+)
+```
+
+## 7.3 Encode size / opacity by data
+
+Map a numeric variable to point size or opacity (they share one channel).
+
+```{r size-opacity-by}
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype", sizeBy = "nCount")
+reglScatterplot(reglScatterExample,
+  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype", opacityBy = "CD3D")
+```
+
+# 8. Export (PNG / SVG / PDF)
+
+`enableDownload = TRUE` adds an in-plot export button (also on the toolbar).
 
 ```{r export}
 reglScatterplot(reglScatterExample,
@@ -185,18 +223,18 @@ reglScatterplot(reglScatterExample,
 )
 ```
 
-# 8. Other input objects
+# 9. Other input objects
 
 The same `reglScatterplot()` call dispatches on the object class.
 
-## 8.1 Plain numeric matrix
+## 9.1 Plain numeric matrix
 
 ```{r matrix}
 m <- as.matrix(reglScatterExample[, c("UMAP_1", "UMAP_2")])
 reglScatterplot(m, colorBy = reglScatterExample$celltype)
 ```
 
-## 8.2 SingleCellExperiment
+## 9.2 SingleCellExperiment
 
 ```{r sce}
 if (requireNamespace("SingleCellExperiment", quietly = TRUE)) {
@@ -215,7 +253,7 @@ if (requireNamespace("SingleCellExperiment", quietly = TRUE)) {
 }
 ```
 
-## 8.3 SpatialExperiment (spatial coords)
+## 9.3 SpatialExperiment (spatial coords)
 
 ```{r spe}
 if (requireNamespace("SpatialExperiment", quietly = TRUE)) {
@@ -233,7 +271,7 @@ if (requireNamespace("SpatialExperiment", quietly = TRUE)) {
 }
 ```
 
-## 8.4 Seurat
+## 9.4 Seurat
 
 ```{r seurat}
 if (requireNamespace("SeuratObject", quietly = TRUE)) {
@@ -253,7 +291,7 @@ if (requireNamespace("SeuratObject", quietly = TRUE)) {
 }
 ```
 
-## 8.5 AnnData (anndataR)
+## 9.5 AnnData (anndataR)
 
 ```{r anndata}
 if (requireNamespace("anndataR", quietly = TRUE)) {
@@ -271,24 +309,38 @@ if (requireNamespace("anndataR", quietly = TRUE)) {
 }
 ```
 
-# 9. Synchronised plots
+# 10. Synchronised plots
 
-Two plots sharing a `syncPlots` group pan/zoom together (most useful inside
-Shiny — see `?enableReglScatterplotSync`).
+Plots sharing a `syncPlots` group link their pan/zoom, lasso **selection** and
+legend/range **filtering** — drag or hide a category in one and the others
+follow. Lay them out with `htmltools` (this is the R counterpart of
+`reglscatterpy`'s `compose()`).
 
 ```{r sync, eval=FALSE}
 p1 <- reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
   colorBy = "celltype", plotId = "p1", syncPlots = c("p1", "p2"))
 p2 <- reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
   colorBy = "CD3D", plotId = "p2", syncPlots = c("p1", "p2"))
-htmltools::tagList(p1, p2)
+htmltools::tagList(
+  htmltools::div(style = "display:flex; gap:8px; height:460px",
+    htmltools::div(style = "flex:1", p1),
+    htmltools::div(style = "flex:1", p2)))
 ```
 
-# 10. Shiny
+# 11. Shiny
 
 In Shiny use `reglScatterplotOutput()` / `renderReglScatterplot()`, and
 `enableReglScatterplotSync()` / `updateReglPointSize()` to drive plots from the
-server. See `?reglScatterplotOutput`.
+server. A lasso selection is reported to `input$<plotId>_selected`
+(`$indices`, `$count`), so you can react to it server-side. See
+`?reglScatterplotOutput`.
+
+```{r shiny-selection, eval=FALSE}
+# observeEvent(input$plot_selected, {
+#   sel <- input$plot_selected$indices      # selected row indices
+#   message(length(sel), " cells selected")
+# })
+```
 
 ```{r shiny, eval=FALSE}
 library(shiny)
