@@ -676,10 +676,7 @@ HTMLWidgets.widget({
                 }
                 .sp-legend-item:hover { background-color: rgba(128,128,128,0.14); border-radius: 6px; }
                 .sp-legend-count { margin-left: auto; padding-left: 10px; font-size: 11px; opacity: 0.6; font-variant-numeric: tabular-nums; }
-                .sp-color-swatch { width: 13px; height: 13px; margin-right: 9px; flex-shrink: 0; cursor: pointer; padding: 0; border: 1px solid rgba(0,0,0,0.25); border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
-                .sp-color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
-                .sp-color-swatch::-webkit-color-swatch { border: none; border-radius: 50%; }
-                .sp-color-swatch::-moz-color-swatch { border: none; border-radius: 50%; }
+                .sp-color-swatch { width: 13px; height: 13px; margin-right: 9px; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.25); border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
                 .sp-loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; position: absolute; top: 50%; left: 50%; margin-top: -15px; margin-left: -15px; z-index: 50; display: none; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             `;
@@ -967,22 +964,29 @@ HTMLWidgets.widget({
                         row.style.opacity = '0.3';
                     }
                     
-                    // Native <input type=color>: the browser positions the OS
-                    // colour picker correctly in every environment (Jupyter,
-                    // VS Code, RStudio, standalone), unlike a JS picker whose
-                    // popup mis-positions inside notebooks' nested/scrolled DOM.
-                    const swatch = document.createElement('input');
-                    swatch.type = 'color';
+                    // The colour is shown by a <div> background (renders reliably
+                    // in every environment), with a transparent native
+                    // <input type=color> overlaid for the picker (the browser
+                    // positions the OS picker correctly). A bare color input's
+                    // own swatch is restyled away by VS Code / Jupyter CSS.
+                    const swatch = document.createElement('span');
                     swatch.className = 'sp-color-swatch';
-                    swatch.value = legendData.colors[i];
+                    swatch.style.backgroundColor = legendData.colors[i];
+                    swatch.style.position = 'relative';
+                    swatch.style.display = 'inline-block';
                     swatch.title = 'Click to recolour ' + name;
-                    swatch.style.width = (fontSize + 2) + 'px';
-                    swatch.style.height = (fontSize + 2) + 'px';
+                    const colorInput = document.createElement('input');
+                    colorInput.type = 'color';
+                    colorInput.value = legendData.colors[i];
+                    colorInput.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; ' +
+                        'opacity:0; border:none; padding:0; margin:0; cursor:pointer;';
+                    swatch.appendChild(colorInput);
                     row.appendChild(swatch);
 
-                    swatch.addEventListener('input', () => {
-                        const newHex = swatch.value.substring(0, 7);
+                    colorInput.addEventListener('input', () => {
+                        const newHex = colorInput.value.substring(0, 7);
                         legendData.colors[i] = newHex;
+                        swatch.style.backgroundColor = newHex;
                         plot.set({ pointColor: [...legendData.colors] });
                         if (window.Shiny && window.Shiny.setInputValue) {
                             window.Shiny.setInputValue('sp_color_change', {
@@ -993,6 +997,7 @@ HTMLWidgets.widget({
                         }
                     });
                     // Don't let opening the picker toggle the category filter.
+                    colorInput.addEventListener('click', (e) => e.stopPropagation());
                     swatch.addEventListener('click', (e) => e.stopPropagation());
                     
                     const label = document.createElement('span');
