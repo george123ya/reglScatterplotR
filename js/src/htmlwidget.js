@@ -257,15 +257,20 @@ function createFilterPanel(container, entry, fontSize) {
 
     const bg = entry.legendBg || '#ffffff';
     const txt = entry.legendText || '#000000';
-    const border = 'rgba(128,128,128,0.35)';
+    // SP_PANEL: shared frosted-card look across legend / filter / toolbar.
+    const border = 'rgba(127,127,127,0.30)';
+    const legOpacity = (typeof entry.legendOpacity === 'number') ? entry.legendOpacity : 0.55;
+    const legBlur = (typeof entry.legendBlur === 'number') ? entry.legendBlur : 10;
+    const frostedBg = hexToRgba(bg, legOpacity);
+    const blurCss = legBlur > 0 ? 'backdrop-filter:blur(' + legBlur + 'px) saturate(120%); -webkit-backdrop-filter:blur(' + legBlur + 'px) saturate(120%);' : '';
     const fam = '-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,Arial,sans-serif';
 
     const accent = '#3b82f6';
     const wrap = document.createElement('div');
     wrap.className = 'sp-filter-wrapper';
     wrap.style.cssText = 'position:absolute; bottom:10px; left:10px; z-index:998;' +
-        'background:' + bg + '; color:' + txt + '; border:1px solid ' + border + ';' +
-        'border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:' + fontSize + 'px;' +
+        'background:' + frostedBg + '; color:' + txt + '; border:1px solid ' + border + ';' + blurCss +
+        'border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,0.28); font-size:' + fontSize + 'px;' +
         'width:230px; max-height:min(92%,440px); overflow-y:auto; font-family:' + fam + ';';
 
     // Header with a minimize toggle, mirroring the legend.
@@ -802,7 +807,7 @@ HTMLWidgets.widget({
             const entry = globalRegistry.get(plotId);
             const bg = entry.legendBg || '#ffffff';
             const txt = entry.legendText || '#222222';
-            const border = (txt.includes('#222') || txt === '#222') ? 'var(--border-color, #eee)' : 'var(--border-color, #475569)';
+            const border = 'rgba(127,127,127,0.30)'; // shared panel border (see SP_PANEL)
             // Frosted-glass card: translucent bg + blur, both tunable.
             const legOpacity = (typeof entry.legendOpacity === 'number') ? entry.legendOpacity : 0.55;
             const legBlur = (typeof entry.legendBlur === 'number') ? entry.legendBlur : 10;
@@ -1100,16 +1105,20 @@ HTMLWidgets.widget({
                 });
             } else if (legendData.var_type === 'continuous') {
                  const fmtV = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : (Math.abs(v) >= 1 ? v.toFixed(1) : v.toFixed(2)));
-                 const wrap = document.createElement('div');
-                 wrap.style.cssText = 'margin-top: 4px; min-width: 132px;';
+                 const BH = 76; // gradient bar height (px)
+                 const row = document.createElement('div');
+                 row.style.cssText = 'display: flex; align-items: stretch; gap: 8px; margin-top: 4px;';
                  const bar = document.createElement('div');
-                 bar.style.cssText = `height: 10px; border-radius: 5px; border: 1px solid rgba(127,127,127,0.3); ` +
-                     `background: linear-gradient(to right, ${legendData.colors.join(',')});`;
+                 bar.style.cssText = `width: 12px; height: ${BH}px; border-radius: 6px; border: 1px solid rgba(127,127,127,0.3); ` +
+                     `background: linear-gradient(to top, ${legendData.colors.join(',')});`;
                  const lbls = document.createElement('div');
-                 lbls.style.cssText = `display: flex; justify-content: space-between; margin-top: 4px; font-size: ${fontSize - 2}px; opacity: 0.75;`;
-                 lbls.innerHTML = `<span>${fmtV(legendData.minVal)}</span><span>${fmtV(legendData.midVal)}</span><span>${fmtV(legendData.maxVal)}</span>`;
-                 wrap.appendChild(bar); wrap.appendChild(lbls);
-                 legendDiv.appendChild(wrap);
+                 lbls.style.cssText = `display: flex; flex-direction: column; justify-content: space-between; ` +
+                     `height: ${BH}px; font-size: ${fontSize - 2}px; opacity: 0.8;`;
+                 lbls.innerHTML = `<span>${fmtV(legendData.maxVal)}</span>` +
+                     `<span>${fmtV(legendData.midVal)}</span>` +
+                     `<span>${fmtV(legendData.minVal)}</span>`;
+                 row.appendChild(bar); row.appendChild(lbls);
+                 legendDiv.appendChild(row);
             }
         };
 
@@ -1907,9 +1916,19 @@ HTMLWidgets.widget({
                     };
                     const tb = document.createElement('div');
                     tb.className = 'sp-toolbar' + (tbPos === 'top' ? ' sp-toolbar-h' : '');
+                    // SP_PANEL: match the legend/filter frosted card (bg from
+                    // legendBg, icons in legendText) so the panels are a family.
+                    const tbBg = xData.legendBg || '#ffffff';
+                    const tbTxt = xData.legendText || '#222222';
+                    const tbOpacity = (typeof xData.legendOpacity === 'number') ? xData.legendOpacity : 0.55;
+                    const tbBlur = (typeof xData.legendBlur === 'number') ? xData.legendBlur : 10;
+                    tb.style.background = hexToRgba(tbBg, tbOpacity);
+                    tb.style.borderColor = 'rgba(127,127,127,0.30)';
+                    if (tbBlur > 0) { tb.style.backdropFilter = 'blur(' + tbBlur + 'px) saturate(120%)'; tb.style.webkitBackdropFilter = tb.style.backdropFilter; }
                     const mk = (title, svg, onClick) => {
                         const btn = document.createElement('button');
                         btn.className = 'sp-tb-btn'; btn.title = title; btn.innerHTML = svg;
+                        btn.style.color = tbTxt;
                         btn.onclick = (e) => { e.stopPropagation(); onClick(btn); };
                         tb.appendChild(btn); return btn;
                     };
