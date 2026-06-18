@@ -225,6 +225,24 @@ function recalcAndApplyFilters(entry) {
     }
 }
 
+// Share legend / range filtering across a sync group. Independent plots (no
+// syncGroup) stay isolated; plots linked via `syncPlots` / compose() filter
+// together. Filters are by point index (shared cells), so this works even when
+// group members colour by different variables.
+function propagateFiltersToGroup(src) {
+    if (!src || !src.syncGroup || !globalRegistry.globalSyncEnabled) return;
+    src.syncGroup.forEach(pid => {
+        if (pid === src.plotId) return;
+        const e = globalRegistry.get(pid);
+        if (!e || !e.plot || e.plot._destroyed) return;
+        e.indexFilters = new Map(src.indexFilters);
+        e.activeStrainers = Object.assign({}, src.activeStrainers);
+        e.categorySelections = new Map(src.categorySelections);
+        if (e.updateLegendUI) e.updateLegendUI();
+        recalcAndApplyFilters(e);
+    });
+}
+
 // In-widget range-filter panel. `filterBy` ships per-variable numeric vectors;
 // in Shiny the host app supplies sliders that drive `activeStrainers` via the
 // update_filter_range handler, but in standalone HTML / R Markdown / the Viewer
@@ -387,6 +405,7 @@ function createFilterPanel(container, entry, fontSize) {
             if (curLo <= lo && curHi >= hi) delete entry.activeStrainers[key];
             else entry.activeStrainers[key] = [curLo, curHi];
             recalcAndApplyFilters(entry);
+            propagateFiltersToGroup(entry);
         };
 
         const startDrag = (which) => (ev) => {
@@ -1043,6 +1062,7 @@ HTMLWidgets.widget({
                           }
                           if (entry.updateLegendUI) entry.updateLegendUI();
                           recalcAndApplyFilters(entry);
+                          propagateFiltersToGroup(entry);
                           if (window.Shiny && window.Shiny.setInputValue) {
                               const allowedIndices = currentSelections ? Array.from(currentSelections) : null;
                               let allowedNames = null;
