@@ -345,8 +345,9 @@ server. A lasso selection is reported to `input$<plotId>_selected`
 
 ```{r shiny-selection, eval=FALSE}
 # observeEvent(input$plot_selected, {
-#   sel <- input$plot_selected$indices      # selected row indices
-#   message(length(sel), " cells selected")
+#   sel <- input$plot_selected$indices      # selected indices (0-based, from JS)
+#   sce_sub <- sce[, sel + 1L]               # subset cells (R is 1-based) -> the
+#   message(ncol(sce_sub), " cells selected") # Python equivalent of adata[w.selection]
 # })
 ```
 
