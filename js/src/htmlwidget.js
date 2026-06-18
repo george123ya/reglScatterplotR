@@ -386,21 +386,23 @@ function createFilterPanel(container, entry, fontSize) {
         svg.appendChild(baseP); svg.appendChild(hiP);
         area.appendChild(svg);
 
-        const trackY = (TH - 4) / 2;
-        const track = document.createElement('div');
-        track.style.cssText = 'position:absolute; left:0; right:0; bottom:' + trackY +
-            'px; height:4px; background:' + border + '; border-radius:2px;';
-        area.appendChild(track);
-        const sel = document.createElement('div');
-        sel.style.cssText = 'position:absolute; bottom:' + trackY + 'px; height:4px; background:' +
-            accent + '; border-radius:2px;';
-        area.appendChild(sel);
+        // Brush directly over the density: a shaded selected region + two
+        // draggable vertical handles spanning the histogram (no separate track).
+        area.style.height = (HH + 9) + 'px';
+        const shade = document.createElement('div');
+        shade.style.cssText = 'position:absolute; top:0; height:' + HH + 'px; pointer-events:none; ' +
+            'background:' + accent + '; opacity:0.10;';
+        area.appendChild(shade);
 
         const mkHandle = () => {
             const h = document.createElement('div');
-            h.style.cssText = 'position:absolute; bottom:0; width:12px; height:' + TH +
-                'px; margin-left:-6px; background:#fff; border:2px solid ' + accent +
-                '; border-radius:50%; cursor:ew-resize; box-shadow:0 1px 3px rgba(0,0,0,0.35);';
+            h.style.cssText = 'position:absolute; top:0; width:11px; height:' + (HH + 9) +
+                'px; margin-left:-5.5px; cursor:ew-resize; touch-action:none; z-index:2;';
+            h.innerHTML =
+                '<div style="position:absolute; left:4px; top:0; width:3px; height:' + HH + 'px; ' +
+                'background:' + accent + '; border-radius:2px;"></div>' +
+                '<div style="position:absolute; left:0; bottom:0; width:11px; height:9px; ' +
+                'border-radius:0 0 3px 3px; background:' + accent + '; box-shadow:0 1px 2px rgba(0,0,0,0.3);"></div>';
             area.appendChild(h); return h;
         };
         const hLo = mkHandle(), hHi = mkHandle();
@@ -413,8 +415,8 @@ function createFilterPanel(container, entry, fontSize) {
             const fLo = frac(curLo), fHi = frac(curHi);
             hLo.style.left = (fLo * 100) + '%';
             hHi.style.left = (fHi * 100) + '%';
-            sel.style.left = (fLo * 100) + '%';
-            sel.style.width = ((fHi - fLo) * 100) + '%';
+            shade.style.left = (fLo * 100) + '%';
+            shade.style.width = ((fHi - fLo) * 100) + '%';
             clipRect.setAttribute('x', String(fLo * 100));
             clipRect.setAttribute('width', String((fHi - fLo) * 100));
             label.textContent = key + ': ' + fmt(curLo) + ' – ' + fmt(curHi);
@@ -716,7 +718,13 @@ HTMLWidgets.widget({
                     width: 20px; height: 20px; border: none; background: transparent;
                     color: inherit; cursor: pointer; border-radius: 4px; outline: none;
                     display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;
+                    opacity: 0; pointer-events: none; transition: opacity 0.15s;
                 }
+                /* The minimize button hides while the legend is blended; it
+                   appears on hover (or stays when minimized, to allow expanding). */
+                .sp-legend-wrapper:hover .sp-legend-btn,
+                .sp-legend-wrapper.dragging .sp-legend-btn,
+                .sp-legend-wrapper.minimized .sp-legend-btn { opacity: 0.75; pointer-events: auto; }
                 .sp-legend-btn:focus, .sp-legend-btn:focus-visible { outline: none; box-shadow: none; }
                 
                 .sp-legend-content { padding: 6px; overflow-y: auto; max-height: 300px; }
@@ -970,11 +978,14 @@ HTMLWidgets.widget({
 
                     let newLeft = initialLeft + dx;
                     let newTop = initialTop + dy;
-                    const maxLeft = container.clientWidth - legendWrapper.offsetWidth;
-                    const maxTop = container.clientHeight - legendWrapper.offsetHeight;
-                    
-                    legendWrapper.style.left = Math.max(0, Math.min(newLeft, maxLeft)) + 'px';
-                    legendWrapper.style.top = Math.max(0, Math.min(newTop, maxTop)) + 'px';
+                    // Keep the legend inside the plot area (within the axis
+                    // margins) so it never overlaps / blends into the axes.
+                    const mL = margin.left, mT = margin.top, mR = margin.right, mB = margin.bottom;
+                    const minLeft = mL, minTop = mT;
+                    const maxLeft = container.clientWidth - mR - legendWrapper.offsetWidth;
+                    const maxTop = container.clientHeight - mB - legendWrapper.offsetHeight;
+                    legendWrapper.style.left = Math.max(minLeft, Math.min(newLeft, Math.max(minLeft, maxLeft))) + 'px';
+                    legendWrapper.style.top = Math.max(minTop, Math.min(newTop, Math.max(minTop, maxTop))) + 'px';
                 };
 
                 const onUp = () => {
@@ -1346,40 +1357,17 @@ HTMLWidgets.widget({
             const bgFill = (xData.backgroundColor) ? xData.backgroundColor : 'white';
             svgContent += `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`;
             svgContent += `<rect width="${w}" height="${h}" fill="${bgFill}"/>`;
-            // Embed the rendered canvas as the plot area so the SVG matches the
-            // on-screen plot EXACTLY (no aspect deformation); overlay crisp
-            // vector axes + legend on top. (The old vector-points path remapped
-            // the data range to the full canvas and stretched it.)
-            {
-                const cW2 = w - margin.left - margin.right;
-                const cH2 = h - margin.top - margin.bottom;
-                try {
-                    svgContent += `<image x="${margin.left}" y="${margin.top}" width="${cW2}" height="${cH2}" ` +
-                        `preserveAspectRatio="none" href="${canvas.toDataURL('image/png')}"/>`;
-                } catch (e) {}
-                if (svg) {
-                    const ser = new XMLSerializer();
-                    let axesStr = ser.serializeToString(svg.node());
-                    if (axesStr.startsWith('<svg')) axesStr = axesStr.substring(axesStr.indexOf('>') + 1, axesStr.lastIndexOf('<'));
-                    svgContent += axesStr;
-                }
-                if (legendDiv && legendDiv.style.display !== 'none' && xData.legend) {
-                    const legG = createLegendSVG(xData.legend, w);
-                    if (legG) { const ser = new XMLSerializer(); svgContent += ser.serializeToString(legG); }
-                }
-            }
-            if (false) {
-                 const internalXScale = plot.get('xScale'); const internalYScale = plot.get('yScale');
-                 let xDomExp, yDomExp;
-                 if (internalXScale && internalYScale) {
-                     const vnX = internalXScale.domain(); const vnY = internalYScale.domain();
-                     xDomExp = [xDomainOrig[0] + (vnX[0]+1)/2 * (xDomainOrig[1]-xDomainOrig[0]), xDomainOrig[0] + (vnX[1]+1)/2 * (xDomainOrig[1]-xDomainOrig[0])];
-                     yDomExp = [yDomainOrig[0] + (vnY[0]+1)/2 * (yDomainOrig[1]-yDomainOrig[0]), yDomainOrig[0] + (vnY[1]+1)/2 * (yDomainOrig[1]-yDomainOrig[0])];
-                 } else { xDomExp = xDomainOrig; yDomExp = yDomainOrig; }
-                 const xSc = d3.scaleLinear().domain(xDomExp).range([margin.left, w - margin.right]);
-                 const ySc = d3.scaleLinear().domain(yDomExp).range([h - margin.bottom, margin.top]);
-                 const minX = Math.min(xDomExp[0], xDomExp[1]), maxX = Math.max(xDomExp[0], xDomExp[1]);
-                 const minY = Math.min(yDomExp[0], yDomExp[1]), maxY = Math.max(yDomExp[0], yDomExp[1]);
+            if (useVector && d3Available && rX && xScale && yScale) {
+                 // Real vector points positioned with the LIVE axis scales, so
+                 // they match the on-screen axes + WebGL canvas exactly - no
+                 // aspect deformation (the scales already encode the visible
+                 // domain, which is aspect-preserved on screen).
+                 const xSc = (v) => xScale(v);
+                 const ySc = (v) => yScale(v);
+                 const xd = xScale.domain(), yd = yScale.domain();
+                 const minX = Math.min(xd[0], xd[1]), maxX = Math.max(xd[0], xd[1]);
+                 const minY = Math.min(yd[0], yd[1]), maxY = Math.max(yd[0], yd[1]);
+                 const cpId = 'pc_' + Math.random().toString(36).substr(2, 9);
                  const circleR = (xData.options.size||3)/2;
                  const opacity = xData.options.opacity || 0.8;
                  const defaultColor = Array.isArray(xData.options.pointColor) ? xData.options.pointColor[0] : (xData.options.pointColor || '#0072B2');
@@ -1467,9 +1455,24 @@ HTMLWidgets.widget({
                      }
                      svgContent += axesStr;
                  }
-                 if(legendDiv && xData.legend) {
+                 if(legendDiv && legendDiv.style.display !== 'none' && xData.legend) {
                     const legG = createLegendSVG(xData.legend, w);
                     if (legG) { const ser = new XMLSerializer(); svgContent += ser.serializeToString(legG); }
+                 }
+            } else {
+                 // Too many points for vector circles: embed the rendered canvas
+                 // bitmap as the plot area, with crisp vector axes + legend.
+                 const cW2 = w - margin.left - margin.right, cH2 = h - margin.top - margin.bottom;
+                 try { svgContent += `<image x="${margin.left}" y="${margin.top}" width="${cW2}" height="${cH2}" preserveAspectRatio="none" href="${canvas.toDataURL('image/png')}"/>`; } catch (e) {}
+                 if (svg) {
+                     const ser = new XMLSerializer();
+                     let axesStr = ser.serializeToString(svg.node());
+                     if (axesStr.startsWith('<svg')) axesStr = axesStr.substring(axesStr.indexOf('>') + 1, axesStr.lastIndexOf('<'));
+                     svgContent += axesStr;
+                 }
+                 if (legendDiv && legendDiv.style.display !== 'none' && xData.legend) {
+                     const legG = createLegendSVG(xData.legend, w);
+                     if (legG) { const ser = new XMLSerializer(); svgContent += ser.serializeToString(legG); }
                  }
             }
             svgContent += '</svg>';
