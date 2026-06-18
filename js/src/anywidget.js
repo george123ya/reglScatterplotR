@@ -56,8 +56,31 @@ function mount(el, model) {
   });
   ro.observe(container);
 
+  // Selection round-trip: lasso in the plot -> model._selection (Python reads
+  // w.selection); Python sets w.selection -> highlight points in the plot.
+  let applyingFromModel = false;
+  const onSel = (ev) => {
+    if (applyingFromModel) return;
+    model.set("_selection", ev.detail.indices || []);
+    model.save_changes();
+  };
+  container.addEventListener("sp-selection", onSel);
+  const onModelSel = () => {
+    if (typeof inst.setSelection !== "function") return;
+    applyingFromModel = true;
+    try { inst.setSelection(model.get("_selection") || []); }
+    finally { applyingFromModel = false; }
+  };
+  model.on("change:_selection", onModelSel);
+  const initSel = model.get("_selection");
+  if (initSel && initSel.length && typeof inst.setSelection === "function") {
+    inst.setSelection(initSel);
+  }
+
   return () => {
     ro.disconnect();
+    container.removeEventListener("sp-selection", onSel);
+    model.off("change:_selection", onModelSel);
     container.remove();
   };
 }

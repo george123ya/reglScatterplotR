@@ -1733,31 +1733,44 @@ HTMLWidgets.widget({
                 });
                 window.__spUnsubscribers[plotId].push(unsubView);
                 
-                const unsubSelect = plot.subscribe('select', ({ points: sel }) => { 
-                    if (!globalRegistry.globalSyncEnabled) return;
-                    if (!globalRegistry.isSyncing) { 
-                        try {
-                            globalRegistry.isSyncing = true;
-                            if (window.Shiny && window.Shiny.setInputValue) { window.Shiny.setInputValue(plotId+'_selected', { indices: Array.from(sel), count: sel.length }); } 
-                            globalRegistry.forEach((e, pid) => {
-                                if (pid !== plotId && e.plot && e.canvas.isConnected) e.plot.select(sel, { preventEvent: true });
-                            });
-                        } finally { globalRegistry.isSyncing = false; }
-                    } 
+                // Report a selection everywhere: Shiny input + a DOM event that
+                // non-Shiny hosts (the anywidget adapter) bridge to a model trait
+                // so Python can read `w.selection`. Always fires, regardless of
+                // sync. Cross-plot mirroring is scoped to the sync group only.
+                const reportSelection = (indices) => {
+                    const e0 = globalRegistry.get(plotId);
+                    if (e0) e0.selectedIndices = indices;
+                    if (window.Shiny && window.Shiny.setInputValue) {
+                        window.Shiny.setInputValue(plotId + '_selected', { indices: indices, count: indices.length });
+                    }
+                    try {
+                        container.dispatchEvent(new CustomEvent('sp-selection',
+                            { detail: { plotId: plotId, indices: indices }, bubbles: false }));
+                    } catch (e) {}
+                };
+                const mirrorToGroup = (apply) => {
+                    const e0 = globalRegistry.get(plotId);
+                    if (!globalRegistry.globalSyncEnabled || globalRegistry.isSyncing || !e0 || !e0.syncGroup) return;
+                    try {
+                        globalRegistry.isSyncing = true;
+                        e0.syncGroup.forEach(pid => {
+                            if (pid === plotId) return;
+                            const e = globalRegistry.get(pid);
+                            if (e && e.plot && e.canvas && e.canvas.isConnected) apply(e.plot);
+                        });
+                    } finally { globalRegistry.isSyncing = false; }
+                };
+
+                const unsubSelect = plot.subscribe('select', ({ points: sel }) => {
+                    const indices = Array.from(sel);
+                    reportSelection(indices);
+                    mirrorToGroup(pl => pl.select(sel, { preventEvent: true }));
                 });
                 window.__spUnsubscribers[plotId].push(unsubSelect);
 
-                const unsubDeselect = plot.subscribe('deselect', () => { 
-                    if (!globalRegistry.globalSyncEnabled) return;
-                    if(!globalRegistry.isSyncing) { 
-                        try {
-                            globalRegistry.isSyncing = true;
-                            if(window.Shiny) window.Shiny.setInputValue(plotId+'_selected', {indices:[], count:0}); 
-                            globalRegistry.forEach((e, pid) => {
-                                if (pid !== plotId && e.plot && e.canvas.isConnected) e.plot.deselect({ preventEvent: true });
-                            });
-                        } finally { globalRegistry.isSyncing = false; }
-                    } 
+                const unsubDeselect = plot.subscribe('deselect', () => {
+                    reportSelection([]);
+                    mirrorToGroup(pl => pl.deselect({ preventEvent: true }));
                 });
                 window.__spUnsubscribers[plotId].push(unsubDeselect);
 
@@ -1807,10 +1820,25 @@ HTMLWidgets.widget({
                     createFilterPanel(container, globalRegistry.get(plotId), xData.legendFontSize || 12);
                 }
                 prevNumPoints = n;
-                updateLegendUI(); 
+                updateLegendUI();
                 recalcAndApplyFilters(globalRegistry.get(plotId));
             },
-            
+
+            // Programmatic selection (used by the Python anywidget adapter so
+            // `w.selection = [...]` highlights points). preventEvent avoids a
+            // feedback loop back to the host.
+            setSelection: function(indices) {
+                if (!plot) return;
+                const e = globalRegistry.get(plotId);
+                if (e) e.selectedIndices = Array.isArray(indices) ? indices : [];
+                if (indices && indices.length) plot.select(indices, { preventEvent: true });
+                else plot.deselect({ preventEvent: true });
+            },
+            getSelection: function() {
+                const e = globalRegistry.get(plotId);
+                return (e && e.selectedIndices) || [];
+            },
+
             resize: function(w, h) {
                 widgetWidth = w;
                 widgetHeight = h;
