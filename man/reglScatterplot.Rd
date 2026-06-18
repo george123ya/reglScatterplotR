@@ -15,6 +15,8 @@ reglScatterplot(
   pointSize = NULL,
   opacity = NULL,
   pointColor = NULL,
+  sizeBy = NULL,
+  opacityBy = NULL,
   pixelRatio = NULL,
   categoricalPalette = "Set1",
   continuousPalette = "viridis",
@@ -95,6 +97,10 @@ small data; \code{pointSize = 1}, \code{opacity = 1} once \code{n > 500000}).}
 
 \item{pointColor}{Optional fixed hex colour. When given, overrides
 \code{colorBy}.}
+
+\item{sizeBy, opacityBy}{Optional numeric column name or vector mapped to point
+size / opacity. They share one data channel, so both encode the same
+variable.}
 
 \item{pixelRatio}{Optional numeric device-pixel-ratio for the WebGL backing
 store. When \code{NULL} (default) the widget renders at \code{max(devicePixelRatio, 2)} for crisp output - this matters in the RStudio Viewer, an embedded

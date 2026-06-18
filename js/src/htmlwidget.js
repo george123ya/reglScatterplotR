@@ -718,7 +718,7 @@ HTMLWidgets.widget({
         let plot, renderer, svg, xAxisG, yAxisG, xAxis, yAxis, xScale, yScale;
         let xDomainOrig, yDomainOrig, tooltip, titleDiv;
         let d3Available = false;
-        let dataBuffers = { x: null, y: null, z: null };
+        let dataBuffers = { x: null, y: null, z: null, w: null };
         let legendDiv = null;
         let isInitialRender = true;
         let resizeObserver = null;
@@ -1433,7 +1433,8 @@ HTMLWidgets.widget({
                 dataBuffers.x = decodeBase64(xData.x);
                 dataBuffers.y = decodeBase64(xData.y);
                 dataBuffers.z = decodeBase64(xData.z);
-                
+                dataBuffers.w = xData.w ? decodeBase64(xData.w) : null; // size/opacity encoding channel
+
                 filterBuffers = {};
                 if (xData.filter_data) {
                     Object.keys(xData.filter_data).forEach(key => {
@@ -1551,11 +1552,24 @@ HTMLWidgets.widget({
                     });
                     const newConf = { pointSize: xData.options.size, pointColor: xData.options.pointColor, opacity: xData.options.opacity };
                     newConf.colorBy = xData.options.colorBy ? xData.options.colorBy : null;
+                    // Size / opacity encoding by a second data channel (valueB).
+                    if (dataBuffers.w) {
+                        const szMax = xData.options.size || 6;
+                        if (xData.sizeBy) {
+                            newConf.sizeBy = 'valueB';
+                            newConf.pointSize = [Math.max(1, szMax * 0.25), szMax * 0.5, szMax];
+                        }
+                        if (xData.opacityBy) {
+                            newConf.opacityBy = 'valueB';
+                            newConf.opacity = [0.15, 0.5, 1];
+                        }
+                    }
                     if (initialView) newConf.cameraView = initialView;
                     plot.set(newConf);
                     if (xData.autoFit && !initialView) plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: false });
                     const points = new Array(n);
-                    if (dataBuffers.z) { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i], dataBuffers.z[i]]; } 
+                    if (dataBuffers.w) { const zb = dataBuffers.z; for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i], zb ? zb[i] : 0, dataBuffers.w[i]]; }
+                    else if (dataBuffers.z) { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i], dataBuffers.z[i]]; }
                     else { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i]]; }
                     await plot.draw(points);
                 } catch (err) {

@@ -35,6 +35,9 @@
 #'   small data; `pointSize = 1`, `opacity = 1` once `n > 500000`).
 #' @param pointColor Optional fixed hex colour. When given, overrides
 #'   `colorBy`.
+#' @param sizeBy,opacityBy Optional numeric column name or vector mapped to point
+#'   size / opacity. They share one data channel, so both encode the same
+#'   variable.
 #' @param pixelRatio Optional numeric device-pixel-ratio for the WebGL backing
 #'   store. When `NULL` (default) the widget renders at `max(devicePixelRatio,
 #'   2)` for crisp output - this matters in the RStudio Viewer, an embedded
@@ -170,6 +173,8 @@ reglScatterplot <- function(data = NULL,
                             pointSize = NULL,
                             opacity = NULL,
                             pointColor = NULL,
+                            sizeBy = NULL,
+                            opacityBy = NULL,
                             pixelRatio = NULL,
                             categoricalPalette = "Set1",
                             continuousPalette = "viridis",
@@ -247,6 +252,7 @@ reglScatterplot <- function(data = NULL,
             filterBy = filterBy,
             pointSize = pointSize, opacity = opacity, pointColor = pointColor,
             pixelRatio = pixelRatio,
+            sizeBy = sizeBy, opacityBy = opacityBy,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette, customColors = customColors,
@@ -289,6 +295,7 @@ reglScatterplot <- function(data = NULL,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
             pixelRatio = pixelRatio,
+            sizeBy = sizeBy, opacityBy = opacityBy,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -339,6 +346,7 @@ reglScatterplot <- function(data = NULL,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
             pixelRatio = pixelRatio,
+            sizeBy = sizeBy, opacityBy = opacityBy,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -395,6 +403,7 @@ reglScatterplot <- function(data = NULL,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
             pixelRatio = pixelRatio,
+            sizeBy = sizeBy, opacityBy = opacityBy,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -536,6 +545,24 @@ reglScatterplot <- function(data = NULL,
         )
     }
 
+    ## ---- size/opacity encoding channel (valueB) -------------------------
+    ## A numeric variable mapped to point size and/or opacity. `sizeBy` and
+    ## `opacityBy` share one channel, so they encode the same variable.
+    size_vec <- .resolveColumn(sizeBy, data)
+    opacity_vec <- .resolveColumn(opacityBy, data)
+    w_vec <- if (!is.null(size_vec)) size_vec else opacity_vec
+    w_payload <- NULL
+    if (!is.null(w_vec)) {
+        w_num <- as.numeric(w_vec)
+        w_rng <- range(w_num, na.rm = TRUE)
+        w_unit <- if (diff(w_rng) == 0) {
+            rep.int(0.5, length(w_num))
+        } else {
+            (w_num - w_rng[1L]) / diff(w_rng)
+        }
+        w_payload <- .toBase64U16Unit(w_unit)
+    }
+
     margins <- margins %||% list(top = 20, right = 20, bottom = 40, left = 50)
 
     legend_anchor <- .resolveLegendPosition(legendPosition)
@@ -556,6 +583,9 @@ reglScatterplot <- function(data = NULL,
         showAxes = showAxes, showTooltip = showTooltip,
         backgroundColor = backgroundColor,
         axisColor = axisColor,
+        w = w_payload,
+        sizeBy = !is.null(size_vec),
+        opacityBy = !is.null(opacity_vec),
         legendBg = legendBg, legendText = legendText,
         legendOpacity = legendOpacity, legendBlur = legendBlur,
         toolbarPosition = toolbarPosition, zoomOnSelection = isTRUE(zoomOnSelection),

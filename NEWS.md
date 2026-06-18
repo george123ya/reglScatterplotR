@@ -1,3 +1,18 @@
+# reglScatterplot 0.99.3
+
+* **Selection reporting.** Lasso selections are always reported (Shiny
+  `input$<plotId>_selected` plus a `sp-selection` DOM event for custom hosts);
+  cross-plot selection mirroring is scoped to the `syncPlots` group.
+* **In-plot toolbar** (`toolbarPosition = "left"` / `"top"` / `"none"`): pan,
+  lasso, zoom-to-selection, reset, screenshot.
+* **`zoomOnSelection`** auto-frames the lasso selection.
+* **Encode size / opacity by data** via `sizeBy` / `opacityBy` (a numeric column
+  or vector).
+* **Frosted-glass legend** with `legendOpacity` / `legendBlur`, round colour
+  dots and per-category counts.
+* **Smoother panning** - the d3 axis redraw is coalesced to one frame per view
+  event.
+
 # reglScatterplot 0.99.2
 
 * **Bundled example dataset.** `data(reglScatterExample)` loads a small

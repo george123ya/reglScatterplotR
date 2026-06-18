@@ -1,8 +1,8 @@
 Package: reglScatterplotR
 Type: Package
 Title: Interactive WebGL Scatterplots for Biological Data Exploration
-Version: 0.99.2
-Date: 2026-06-17
+Version: 0.99.3
+Date: 2026-06-18
 Authors@R:
     person(given = "George", family = "Muñoz",
            email = "george.munoz@unmsm.edu.pe",
