@@ -677,6 +677,12 @@ HTMLWidgets.widget({
                 .sp-legend-item:hover { background-color: rgba(128,128,128,0.14); border-radius: 6px; }
                 .sp-legend-count { margin-left: auto; padding-left: 10px; font-size: 11px; opacity: 0.6; font-variant-numeric: tabular-nums; }
                 .sp-color-swatch { width: 13px; height: 13px; margin-right: 9px; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.25); border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+                .sp-toolbar { position: absolute; top: 10px; left: 10px; z-index: 998; display: flex; flex-direction: column; gap: 3px; padding: 4px; border-radius: 9px; background: rgba(20,28,38,0.55); border: 1px solid rgba(255,255,255,0.10); box-shadow: 0 4px 14px rgba(0,0,0,0.3); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+                .sp-toolbar.sp-toolbar-h { flex-direction: row; }
+                .sp-tb-btn { width: 28px; height: 28px; display: grid; place-items: center; border: none; border-radius: 6px; background: transparent; color: #cdd9e5; cursor: pointer; padding: 0; }
+                .sp-tb-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+                .sp-tb-btn.on { background: #2563eb; color: #fff; }
+                .sp-tb-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
                 .sp-loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; position: absolute; top: 50%; left: 50%; margin-top: -15px; margin-left: -15px; z-index: 50; display: none; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             `;
@@ -956,7 +962,7 @@ HTMLWidgets.widget({
                 legendData.names.forEach((name, i) => {
                     const row = document.createElement('div');
                     row.className = 'sp-legend-item';
-                    row.style.cssText = 'display: flex; align-items: center; margin-bottom: 2px; padding: 1px 4px; position: relative; cursor: pointer;';
+                    row.style.cssText = 'display: flex; align-items: center; width: 100%; box-sizing: border-box; margin-bottom: 2px; padding: 1px 4px; position: relative; cursor: pointer;';
                     
                     const myVar = legendData.var_name;
                     const mySelections = entry.categorySelections && entry.categorySelections.get(myVar);
@@ -1711,8 +1717,13 @@ HTMLWidgets.widget({
                 updateLegendUI(); 
                 recalcAndApplyFilters(globalRegistry.get(plotId));
 
+                let _axisRaf = null;
                 const unsubView = plot.subscribe('view', () => {
-                    updateAxesFromCamera();
+                    // Coalesce the (d3) axis redraw to one per animation frame -
+                    // calling it on every view event made panning feel laggy.
+                    if (_axisRaf == null) {
+                        _axisRaf = requestAnimationFrame(() => { _axisRaf = null; updateAxesFromCamera(); });
+                    }
                     const e = globalRegistry.get(plotId);
                     if (e) {
                         e.savedCameraView = cloneCamera(plot.get('cameraView'));
@@ -1737,6 +1748,13 @@ HTMLWidgets.widget({
                 // non-Shiny hosts (the anywidget adapter) bridge to a model trait
                 // so Python can read `w.selection`. Always fires, regardless of
                 // sync. Cross-plot mirroring is scoped to the sync group only.
+                const zoomToSelection = () => {
+                    const e = globalRegistry.get(plotId);
+                    const idx = e && e.selectedIndices;
+                    if (plot && plot.zoomToPoints && idx && idx.length) {
+                        try { plot.zoomToPoints(idx, { transition: true }); } catch (err) {}
+                    }
+                };
                 const reportSelection = (indices) => {
                     const e0 = globalRegistry.get(plotId);
                     if (e0) e0.selectedIndices = indices;
@@ -1747,6 +1765,7 @@ HTMLWidgets.widget({
                         container.dispatchEvent(new CustomEvent('sp-selection',
                             { detail: { plotId: plotId, indices: indices }, bubbles: false }));
                     } catch (e) {}
+                    if (xData.zoomOnSelection && indices.length) zoomToSelection();
                 };
                 const mirrorToGroup = (apply) => {
                     const e0 = globalRegistry.get(plotId);
@@ -1818,6 +1837,42 @@ HTMLWidgets.widget({
                 if (xData.filter_data && Object.keys(xData.filter_data).length &&
                     typeof Shiny === 'undefined') {
                     createFilterPanel(container, globalRegistry.get(plotId), xData.legendFontSize || 12);
+                }
+
+                // Toolbar: pan / lasso / zoom-to-selection / reset / screenshot.
+                // toolbarPosition = "left" (vertical), "top" (horizontal) or
+                // "none". Created once per container.
+                const tbPos = xData.toolbarPosition || 'none';
+                if (tbPos !== 'none' && !container.querySelector('.sp-toolbar')) {
+                    const TB = {
+                        pan: '<svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M8 7l4-4 4 4M8 17l4 4 4-4M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg>',
+                        lasso: '<svg viewBox="0 0 24 24"><path d="M4 11c0-4 4-6 8-6s8 2 8 6-4 6-8 6c-1 0-2 0-3-.3"/><circle cx="6" cy="18" r="2"/></svg>',
+                        zoom: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4M11 8v6M8 11h6"/></svg>',
+                        reset: '<svg viewBox="0 0 24 24"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M20 9a8 8 0 0 0-14-3M4 15a8 8 0 0 0 14 3"/></svg>',
+                        cam: '<svg viewBox="0 0 24 24"><path d="M3 8h4l2-2h6l2 2h4v12H3z"/><circle cx="12" cy="13" r="3"/></svg>'
+                    };
+                    const tb = document.createElement('div');
+                    tb.className = 'sp-toolbar' + (tbPos === 'top' ? ' sp-toolbar-h' : '');
+                    const mk = (title, svg, onClick) => {
+                        const btn = document.createElement('button');
+                        btn.className = 'sp-tb-btn'; btn.title = title; btn.innerHTML = svg;
+                        btn.onclick = (e) => { e.stopPropagation(); onClick(btn); };
+                        tb.appendChild(btn); return btn;
+                    };
+                    const setMode = (mode, btn) => {
+                        try { plot.set({ mouseMode: mode }); } catch (err) {}
+                        tb.querySelectorAll('.sp-tb-btn').forEach(b => b.classList.remove('on'));
+                        if (btn) btn.classList.add('on');
+                    };
+                    const panBtn = mk('Pan / zoom', TB.pan, (b) => setMode('panZoom', b));
+                    mk('Lasso select', TB.lasso, (b) => setMode('lasso', b));
+                    mk('Zoom to selection', TB.zoom, () => zoomToSelection());
+                    mk('Reset view', TB.reset, () => {
+                        try { plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true }); } catch (err) {}
+                    });
+                    mk('Screenshot (PNG)', TB.cam, () => downloadPlot('png'));
+                    panBtn.classList.add('on');
+                    container.appendChild(tb);
                 }
                 prevNumPoints = n;
                 updateLegendUI();

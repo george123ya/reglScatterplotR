@@ -39,6 +39,8 @@ reglScatterplot(
   legendText = "#000000",
   legendOpacity = NULL,
   legendBlur = NULL,
+  toolbarPosition = "none",
+  zoomOnSelection = FALSE,
   legendPosition = "top-right",
   draggableLegend = TRUE,
   width = NULL,
@@ -139,6 +141,13 @@ for cosmetic styling.}
 
 \item{legendBlur}{Backdrop blur in pixels behind the legend card. \code{NULL}
 (default) uses \code{10}; set \code{0} to disable the frosted effect.}
+
+\item{toolbarPosition}{Show an in-plot toolbar (pan / lasso / zoom-to-
+selection / reset / screenshot). One of \code{"none"} (default), \code{"left"}
+(vertical) or \code{"top"} (horizontal).}
+
+\item{zoomOnSelection}{Logical; when \code{TRUE}, the camera zooms to fit the
+lasso-selected points.}
 
 \item{legendPosition}{Starting position of the legend. One of
 \code{"top-right"} (default), \code{"top-left"}, \code{"bottom-right"}, \code{"bottom-left"},
