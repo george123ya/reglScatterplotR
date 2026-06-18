@@ -663,7 +663,7 @@ end`};t.events.push(["putFont",function(A){(function(a){var o=a.font,s=a.out,u=a
                     overflow: hidden; text-overflow: ellipsis;
                 }
                 .sp-legend-item:hover { background-color: rgba(0,0,0,0.03); border-radius: 4px; }
-                .sp-color-swatch { width: 14px; height: 14px; border-radius: 3px; margin-right: 8px; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.2); box-shadow: 0 1px 2px rgba(0,0,0,0.1); padding: 0; -webkit-appearance: none; -moz-appearance: none; appearance: none; background: none; }
+                .sp-color-swatch { width: 16px; height: 16px; margin-right: 8px; flex-shrink: 0; cursor: pointer; padding: 0; border: 1px solid rgba(0,0,0,0.2); border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
                 .sp-color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
                 .sp-color-swatch::-webkit-color-swatch { border: none; border-radius: 2px; }
                 .sp-color-swatch::-moz-color-swatch { border: none; border-radius: 2px; }
