@@ -223,7 +223,7 @@ reglScatterplot <- function(data = NULL,
     crosstalk_key <- NULL
     crosstalk_group <- NULL
     if (requireNamespace("crosstalk", quietly = TRUE) &&
-        methods::is(data, "SharedData")) {
+        inherits(data, "SharedData")) {
         crosstalk_key <- data$key()
         crosstalk_group <- data$groupName()
         data <- data$origData()
