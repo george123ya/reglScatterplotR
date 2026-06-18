@@ -1,5 +1,5 @@
 ---
-title: "reglScatterplotR — full feature tour"
+title: "reglScatterplotR — interactive WebGL scatterplots"
 author: "reglScatterplotR"
 date: "`r Sys.Date()`"
 output:
@@ -17,311 +17,97 @@ library(reglScatterplotR)
 #   devtools::load_all("~/Desktop/reglScatterplotR")
 ```
 
-> **How to use this notebook.** Run it chunk-by-chunk in RStudio (each plot
-> appears in the Viewer / inline) or knit the whole thing to a self-contained
-> HTML report. Every browser dependency is bundled, so it works **offline**.
-> Chunks that need an optional package (Seurat, AnnData, SCE, …) skip
-> gracefully with a message if it is not installed.
+> A guided tour. Run it chunk-by-chunk in RStudio (each plot shows in the Viewer)
+> or knit to a self-contained HTML report — every browser dependency is bundled,
+> so it works **offline**. Chunks needing an optional package (Seurat, AnnData,
+> SCE, …) skip gracefully if it isn't installed. This is the R companion to the
+> Python package [`reglscatterpy`](https://github.com/george123ya/reglscatterpy);
+> both drive the same widget.
 
-# 0. The bundled dataset
+# Setup — the bundled dataset
 
-A 3,400-cell synthetic single-cell embedding ships with the package — no
-download needed.
+A 3,400-cell synthetic single-cell `data.frame` ships with the package (UMAP
+coords, a `celltype` factor, QC metrics and a `CD3D` marker), so you can plot
+immediately.
 
-```{r dataset}
+```{r data}
 data(reglScatterExample)
 str(reglScatterExample)
 ```
 
 # 1. Basics
 
-## 1.1 Minimal plot (data.frame)
-
 ```{r basic}
-reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2")
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2", colorBy = "celltype")
 ```
 
-## 1.2 Colour by a categorical column
+# 2. Colour & palettes
 
-```{r color-categorical}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2",
-  colorBy = "celltype",
-  legendTitle = "Cell type"
-)
+Categorical (ColorBrewer) and continuous (viridis) palettes; clip with
+`vmin`/`vmax`; supply your own with `customColors`.
+
+```{r color}
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
+  colorBy = "CD3D", continuousPalette = "viridis", vmax = "p99")
+
+cols <- setNames(grDevices::hcl.colors(8, "Dark 3"),
+                 levels(reglScatterExample$celltype))
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
+  colorBy = "celltype", customColors = cols)
 ```
 
-## 1.3 Colour by a continuous column
+# 3. Encode size / opacity by data
 
-```{r color-continuous}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2",
-  colorBy = "CD3D",
-  continuousPalette = "viridis",
-  legendTitle = "CD3D"
-)
+```{r encodings}
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
+  colorBy = "celltype", sizeBy = "nCount")
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
+  colorBy = "celltype", opacityBy = "CD3D")
 ```
 
-## 1.4 Fixed point colour (no mapping)
+# 4. Styling & legend
 
-```{r fixed-color}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2",
-  pointColor = "#0072B2"
-)
+The legend is a frosted card — tune `legendOpacity` / `legendBlur`; its title
+defaults to the colour variable name.
+
+```{r styling}
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  title = "PBMC — UMAP", backgroundColor = "#0d1117", axisColor = "#cccccc",
+  legendBg = "#1c2128", legendText = "#e6edf3", legendOpacity = 0.6,
+  legendBlur = 12, legendPosition = "bottom-left")
 ```
 
-# 2. Point appearance
-
-## 2.1 Point size & opacity
-
-```{r size-opacity}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  pointSize = 6, opacity = 0.5
-)
-```
-
-## 2.2 `pixelRatio` — crisp output in the RStudio Viewer
-
-The Viewer reports `devicePixelRatio = 1` on HiDPI screens, so the default now
-super-samples (`max(devicePixelRatio, 2)`). Override for memory or extra
-sharpness:
-
-```{r pixelratio}
-# Extra-sharp (e.g. for screenshots / export)
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  pixelRatio = 3
-)
-```
-
-# 3. Palettes
-
-## 3.1 Built-in categorical / continuous palettes
-
-```{r palettes-builtin}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "percentMito",
-  continuousPalette = "magma", legendTitle = "% mito"
-)
-```
-
-## 3.2 Custom colours for categories
-
-```{r palette-custom}
-celltypes <- levels(reglScatterExample$celltype)
-my_cols <- setNames(
-  grDevices::hcl.colors(length(celltypes), "Dark 3"),
-  celltypes
-)
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  customColors = my_cols
-)
-```
-
-# 4. Filtering
-
-## 4.1 Per-variable filter sliders (`filterBy`)
-
-`filterBy` takes a data.frame of numeric columns that become interactive
-range filters in the widget.
-
-```{r filter}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  filterBy = reglScatterExample[, c("nCount", "nFeature", "percentMito")]
-)
-```
-
-# 5. Axes, ranges & framing
-
-## 5.1 Titles, axis labels, tooltip
-
-```{r labels}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  title = "PBMC — UMAP", xlab = "UMAP 1", ylab = "UMAP 2",
-  showAxes = TRUE, showTooltip = TRUE
-)
-```
-
-## 5.2 Manual ranges, padding, auto-fit
-
-```{r ranges}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  rangePadding = 0.3, autoFit = TRUE
-)
-```
-
-## 5.3 Continuous colour scaling: `vmin`/`vmax`, `centerZero`
-
-```{r vmin-vmax}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "CD3D",
-  vmin = 0, vmax = 4, continuousPalette = "viridis"
-)
-```
-
-# 6. Theming the canvas & legend
-
-The legend is a frosted-glass card; tune its translucency with `legendOpacity`
-(0–1) and `legendBlur` (px).
-
-```{r theme}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  backgroundColor = "#111418", axisColor = "#cccccc",
-  legendBg = "#1c2128", legendText = "#e6edf3",
-  legendOpacity = 0.6, legendBlur = 12,
-  legendPosition = "bottom-left", draggableLegend = TRUE,
-  fontSize = 13, legendFontSize = 12
-)
-```
-
-# 7. Toolbar & encodings
-
-## 7.1 In-plot toolbar
+# 5. Toolbar & zoom-on-selection
 
 `toolbarPosition` adds pan / lasso / zoom-to-selection / reset / screenshot
-buttons (`"left"` vertical, `"top"` horizontal, `"none"` to hide).
+(drag the grip to move it). `zoomOnSelection = TRUE` auto-frames a lasso.
 
 ```{r toolbar}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  toolbarPosition = "left"
-)
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  toolbarPosition = "left", zoomOnSelection = TRUE)
 ```
 
-## 7.2 Zoom to the lasso selection
+# 6. Filtering (distribution sliders)
 
-```{r zoom-on-selection}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  toolbarPosition = "left", zoomOnSelection = TRUE
-)
+`filterBy` adds a panel of density sliders — drag to keep cells within ranges,
+live.
+
+```{r filter}
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  filterBy = reglScatterExample[, c("nCount", "nFeature", "percentMito")])
 ```
 
-> **Reading the lasso selection in R.** The selection is reported to Shiny as
-> `input$<plotId>_selected` (see section 11). Unlike the Python package's
-> `w.selection`, a *static* R Markdown has no channel to send it back to R — use
-> Shiny (or the `sp-selection` DOM event from JS) for that round-trip.
+# 7. Richer tooltips
 
-## 7.3 Encode size / opacity by data
-
-Map a numeric variable to point size or opacity (they share one channel).
-
-```{r size-opacity-by}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype", sizeBy = "nCount")
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype", opacityBy = "CD3D")
+```{r tooltips}
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  tooltipBy = c("nCount", "percentMito"))
 ```
 
-# 8. Export (PNG / SVG / PDF)
+# 8. Synced & linked plots
 
-`enableDownload = TRUE` adds an in-plot export button (also on the toolbar).
-
-```{r export}
-reglScatterplot(reglScatterExample,
-  x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
-  enableDownload = TRUE
-)
-```
-
-# 9. Other input objects
-
-The same `reglScatterplot()` call dispatches on the object class.
-
-## 9.1 Plain numeric matrix
-
-```{r matrix}
-m <- as.matrix(reglScatterExample[, c("UMAP_1", "UMAP_2")])
-reglScatterplot(m, colorBy = reglScatterExample$celltype)
-```
-
-## 9.2 SingleCellExperiment
-
-```{r sce}
-if (requireNamespace("SingleCellExperiment", quietly = TRUE)) {
-  set.seed(1)
-  n <- 500
-  sce <- SingleCellExperiment::SingleCellExperiment(
-    assays = list(logcounts = matrix(rnorm(10 * n), nrow = 10,
-                  dimnames = list(paste0("g", 1:10), NULL))),
-    colData = S4Vectors::DataFrame(
-      cluster = factor(sample(letters[1:4], n, replace = TRUE)))
-  )
-  SingleCellExperiment::reducedDim(sce, "UMAP") <- matrix(rnorm(2 * n), ncol = 2)
-  reglScatterplot(sce, x = "UMAP", colorBy = "cluster")
-} else {
-  message("SingleCellExperiment not installed — skipping.")
-}
-```
-
-## 9.3 SpatialExperiment (spatial coords)
-
-```{r spe}
-if (requireNamespace("SpatialExperiment", quietly = TRUE)) {
-  set.seed(2)
-  n <- 400
-  spe <- SpatialExperiment::SpatialExperiment(
-    assays = list(counts = matrix(rpois(5 * n, 3), nrow = 5)),
-    spatialCoords = matrix(runif(2 * n, 0, 100), ncol = 2,
-                           dimnames = list(NULL, c("x", "y"))),
-    colData = S4Vectors::DataFrame(region = factor(sample(1:3, n, TRUE)))
-  )
-  reglScatterplot(spe, x = "spatial", colorBy = "region")
-} else {
-  message("SpatialExperiment not installed — skipping.")
-}
-```
-
-## 9.4 Seurat
-
-```{r seurat}
-if (requireNamespace("SeuratObject", quietly = TRUE)) {
-  set.seed(3)
-  n <- 400
-  counts <- matrix(rpois(20 * n, 5), nrow = 20,
-                   dimnames = list(paste0("Gene", 1:20), paste0("Cell", 1:n)))
-  so <- SeuratObject::CreateSeuratObject(counts = counts)
-  so$celltype <- factor(sample(c("A", "B", "C"), n, replace = TRUE))
-  emb <- matrix(rnorm(2 * n), ncol = 2,
-                dimnames = list(colnames(so), c("UMAP_1", "UMAP_2")))
-  so[["umap"]] <- SeuratObject::CreateDimReducObject(
-    embeddings = emb, key = "UMAP_", assay = "RNA")
-  reglScatterplot(so, x = "umap", colorBy = "celltype")
-} else {
-  message("SeuratObject not installed — skipping.")
-}
-```
-
-## 9.5 AnnData (anndataR)
-
-```{r anndata}
-if (requireNamespace("anndataR", quietly = TRUE)) {
-  set.seed(4)
-  n <- 400; g <- 15
-  ad <- anndataR::AnnData(
-    X = matrix(rpois(n * g, 2), nrow = n,
-               dimnames = list(NULL, paste0("Gene", 1:g))),
-    obs = data.frame(celltype = factor(sample(c("X", "Y", "Z"), n, TRUE))),
-    obsm = list(X_umap = matrix(rnorm(2 * n), ncol = 2))
-  )
-  reglScatterplot(ad, x = "UMAP", colorBy = "celltype")
-} else {
-  message("anndataR not installed — skipping.")
-}
-```
-
-# 10. Synchronised plots
-
-Plots sharing a `syncPlots` group link their pan/zoom, lasso **selection** and
-legend/range **filtering** — drag or hide a category in one and the others
-follow. Lay them out with `htmltools` (this is the R counterpart of
+Plots sharing a `syncPlots` group link their pan/zoom, lasso selection and
+legend/range filtering. Lay them out with `htmltools` (the R counterpart of
 `reglscatterpy`'s `compose()`).
 
 ```{r sync, eval=FALSE}
@@ -329,75 +115,109 @@ p1 <- reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
   colorBy = "celltype", plotId = "p1", syncPlots = c("p1", "p2"))
 p2 <- reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
   colorBy = "CD3D", plotId = "p2", syncPlots = c("p1", "p2"))
-htmltools::tagList(
-  htmltools::div(style = "display:flex; gap:8px; height:460px",
-    htmltools::div(style = "flex:1", p1),
-    htmltools::div(style = "flex:1", p2)))
+htmltools::tagList(htmltools::div(style = "display:flex; gap:8px; height:460px",
+  htmltools::div(style = "flex:1", p1), htmltools::div(style = "flex:1", p2)))
 ```
 
-# 10b. crosstalk (link with other widgets)
-
-Wrap the data in a `crosstalk::SharedData` and the plot links its lasso
-selection and filtering with other crosstalk widgets (DT, plotly, leaflet) in
-the same document — no Shiny needed.
+`crosstalk` links the lasso selection + filtering with other widgets (DT,
+plotly, leaflet) — no Shiny needed:
 
 ```{r crosstalk, eval=FALSE}
 library(crosstalk)
 sd <- SharedData$new(reglScatterExample)
 bscols(
   reglScatterplot(sd, x = "UMAP_1", y = "UMAP_2", colorBy = "celltype"),
-  DT::datatable(sd)        # lasso the plot -> the table filters to those cells
-)
+  DT::datatable(sd))   # lasso the plot -> the table filters to those cells
 ```
 
-# 11. Shiny
+# 9. Other input objects
 
-In Shiny use `reglScatterplotOutput()` / `renderReglScatterplot()`, and
-`enableReglScatterplotSync()` / `updateReglPointSize()` to drive plots from the
-server. A lasso selection is reported to `input$<plotId>_selected`
-(`$indices`, `$count`), so you can react to it server-side. See
-`?reglScatterplotOutput`.
+The same `reglScatterplot()` call dispatches on the object class.
 
-```{r shiny-selection, eval=FALSE}
-# observeEvent(input$plot_selected, {
-#   sel <- input$plot_selected$indices      # selected indices (0-based, from JS)
-#   sce_sub <- sce[, sel + 1L]               # subset cells (R is 1-based) -> the
-#   message(ncol(sce_sub), " cells selected") # Python equivalent of adata[w.selection]
-# })
+```{r matrix}
+m <- as.matrix(reglScatterExample[, c("UMAP_1", "UMAP_2")])
+reglScatterplot(m, colorBy = reglScatterExample$celltype)   # plain matrix
 ```
 
-**Annotate from a selection (R counterpart of Python's `w.annotate`).** In a
-Shiny app you can write the lasso selection back onto your object's `colData`:
-
-```{r shiny-annotate, eval=FALSE}
-# rv <- reactiveVal(sce)
-# observeEvent(input$annotate, {                      # e.g. an actionButton
-#   sel <- input$plot_selected$indices
-#   obj <- rv()
-#   lab <- as.character(colData(obj)$manual %||% NA)
-#   lab[sel + 1L] <- input$label                      # +1: JS 0-based -> R 1-based
-#   colData(obj)$manual <- factor(lab)
-#   rv(obj)
-# })
+```{r sce}
+if (requireNamespace("SingleCellExperiment", quietly = TRUE)) {
+  set.seed(1); n <- 500
+  sce <- SingleCellExperiment::SingleCellExperiment(
+    assays = list(logcounts = matrix(rnorm(10 * n), nrow = 10,
+                  dimnames = list(paste0("g", 1:10), NULL))),
+    colData = S4Vectors::DataFrame(cluster = factor(sample(letters[1:4], n, TRUE))))
+  SingleCellExperiment::reducedDim(sce, "UMAP") <- matrix(rnorm(2 * n), ncol = 2)
+  reglScatterplot(sce, x = "UMAP", colorBy = "cluster")
+} else message("SingleCellExperiment not installed — skipping.")
 ```
 
-The Python package adds convenience methods on the selection
-(`w.annotate()`, `w.composition()`, `w.diff_expression()`). In R, run the
-equivalent on `input$<id>_selected$indices` server-side with your usual tools
-(e.g. `scran::findMarkers()` / `Seurat::FindMarkers()` for DE, `table()` for
-composition).
+```{r seurat}
+if (requireNamespace("SeuratObject", quietly = TRUE)) {
+  set.seed(3); n <- 400
+  counts <- matrix(rpois(20 * n, 5), nrow = 20,
+                   dimnames = list(paste0("Gene", 1:20), paste0("Cell", 1:n)))
+  so <- suppressWarnings(SeuratObject::CreateSeuratObject(counts = counts))
+  so$celltype <- factor(sample(c("A", "B", "C"), n, replace = TRUE))
+  emb <- matrix(rnorm(2 * n), ncol = 2,
+                dimnames = list(colnames(so), c("UMAP_1", "UMAP_2")))
+  so[["umap"]] <- SeuratObject::CreateDimReducObject(emb, key = "UMAP_", assay = "RNA")
+  reglScatterplot(so, x = "umap", colorBy = "celltype")
+} else message("SeuratObject not installed — skipping.")
+```
+
+```{r anndata}
+if (requireNamespace("anndataR", quietly = TRUE)) {
+  set.seed(4); n <- 400; g <- 15
+  adn <- anndataR::AnnData(
+    X = matrix(rpois(n * g, 2), nrow = n, dimnames = list(NULL, paste0("Gene", 1:g))),
+    obs = data.frame(celltype = factor(sample(c("X", "Y", "Z"), n, TRUE))),
+    obsm = list(X_umap = matrix(rnorm(2 * n), ncol = 2)))
+  reglScatterplot(adn, x = "UMAP", colorBy = "celltype")
+} else message("anndataR not installed — skipping.")
+```
+
+`SpatialExperiment` (use `x = "spatial"`) and `Monocle3` `cell_data_set` (an SCE
+subclass) work the same way.
+
+# 10. Export
+
+`enableDownload = TRUE` adds a PNG/SVG/PDF button (also on the toolbar).
+
+```{r export}
+reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2", colorBy = "celltype",
+  enableDownload = TRUE)
+```
+
+# 11. Shiny — selection & single-cell workflows
+
+In Shiny use `reglScatterplotOutput()` / `renderReglScatterplot()`. A lasso
+selection is reported to `input$<plotId>_selected` (`$indices`, `$count`) — this
+is the R selection round-trip (a static R Markdown has no back-channel, unlike
+Python's `w.selection`).
 
 ```{r shiny, eval=FALSE}
 library(shiny)
-ui <- fluidPage(reglScatterplotOutput("plot", height = "600px"))
+ui <- fluidPage(reglScatterplotOutput("plot", height = "600px"),
+                verbatimTextOutput("info"))
 server <- function(input, output, session) {
   output$plot <- renderReglScatterplot({
     reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
-      colorBy = "celltype", plotId = "plot")
+      colorBy = "celltype", plotId = "plot", toolbarPosition = "left")
+  })
+  output$info <- renderPrint({
+    sel <- input$plot_selected$indices            # 0-based from JS
+    if (length(sel)) {
+      sub <- reglScatterExample[sel + 1L, ]         # the selected cells
+      table(sub$celltype)                           # composition; or run
+    }                                               # scran/Seurat DE here
   })
 }
 shinyApp(ui, server)
 ```
+
+The Python package surfaces these as convenience methods on the selection
+(`w.subset()`, `w.annotate()`, `w.composition()`, `w.diff_expression()`); in R
+run the equivalent on `input$<id>_selected$indices` server-side.
 
 # Session info
 
