@@ -282,8 +282,9 @@ function createFilterPanel(container, entry, fontSize) {
     hTitle.textContent = 'Filters';
     const minBtn = document.createElement('button');
     minBtn.textContent = '−';
+    minBtn.tabIndex = -1;
     minBtn.style.cssText = 'border:none; background:transparent; color:inherit; cursor:pointer;' +
-        'font-size:16px; line-height:1; padding:0 2px;';
+        'font-size:16px; line-height:1; padding:0 2px; outline:none;';
     header.appendChild(hTitle); header.appendChild(minBtn);
     wrap.appendChild(header);
 
@@ -665,11 +666,15 @@ HTMLWidgets.widget({
                     position: absolute;
                     z-index: 999; /* Super high to prevent hiding behind other plots */
                     display: flex; flex-direction: column;
-                    background: var(--bg-card, #ffffff);
-                    border: 1px solid var(--border-color, #e2e8f0);
-                    border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                    transition: opacity 0.2s, box-shadow 0.2s;
-                    
+                    /* Blend into the plot by default; reveal the frosted card on
+                       hover. --legend-bg / --legend-border are set inline. */
+                    background: transparent;
+                    border: 1px solid transparent;
+                    border-radius: 8px; box-shadow: none;
+                    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+
                     /* AUTO WIDTH FIXES */
                     width: fit-content !important;  /* Force fit content */
                     min-width: 100px;               /* Prevent total collapse */
@@ -681,8 +686,15 @@ HTMLWidgets.widget({
                     max-height: min(90%, 360px);
                     overflow: hidden;
                 }
-                
-                .sp-legend-wrapper.dragging { 
+                .sp-legend-wrapper:hover, .sp-legend-wrapper.dragging, .sp-legend-wrapper.pinned {
+                    background: var(--legend-bg, rgba(255,255,255,0.55));
+                    border-color: var(--legend-border, rgba(127,127,127,0.30));
+                    box-shadow: 0 4px 14px rgba(0,0,0,0.28);
+                    backdrop-filter: var(--legend-blur, none) !important;
+                    -webkit-backdrop-filter: var(--legend-blur, none) !important;
+                }
+
+                .sp-legend-wrapper.dragging {
                     opacity: 0.9; box-shadow: 0 8px 24px rgba(0,0,0,0.2); cursor: move; 
                 }
                 .sp-legend-wrapper.minimized { 
@@ -702,9 +714,10 @@ HTMLWidgets.widget({
 
                 .sp-legend-btn {
                     width: 20px; height: 20px; border: none; background: transparent;
-                    color: var(--text-sub, #64748b); cursor: pointer; border-radius: 4px;
+                    color: inherit; cursor: pointer; border-radius: 4px; outline: none;
                     display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;
                 }
+                .sp-legend-btn:focus, .sp-legend-btn:focus-visible { outline: none; box-shadow: none; }
                 
                 .sp-legend-content { padding: 6px; overflow-y: auto; max-height: 300px; }
                 
@@ -857,7 +870,7 @@ HTMLWidgets.widget({
                 const header = document.createElement('div');
                 header.className = 'sp-legend-header';
                 header.innerHTML = `<span class="sp-legend-title">Legend</span>
-                                    <button class="sp-legend-btn" title="Minimize">−</button>`;
+                                    <button class="sp-legend-btn" title="Minimize" tabindex="-1">−</button>`;
                 
                 const content = document.createElement('div');
                 content.className = 'sp-legend-content';
@@ -974,12 +987,13 @@ HTMLWidgets.widget({
             }
 
             legendWrapper.style.display = 'flex';
-            legendWrapper.style.background = frostedBg;
-            legendWrapper.style.backdropFilter = legBlur > 0 ? `blur(${legBlur}px) saturate(120%)` : 'none';
-            legendWrapper.style.webkitBackdropFilter = legendWrapper.style.backdropFilter;
-            legendWrapper.style.borderColor = border;
+            // The frosted look is applied only on hover/drag (see CSS); the card
+            // blends into the plot otherwise. Feed the values as custom props.
+            legendWrapper.style.setProperty('--legend-bg', frostedBg);
+            legendWrapper.style.setProperty('--legend-border', border);
+            legendWrapper.style.setProperty('--legend-blur',
+                legBlur > 0 ? `blur(${legBlur}px) saturate(120%)` : 'none');
             legendWrapper.style.color = txt;
-            // Header blends into the frosted card (no separate strip).
             const headerEl = legendWrapper.querySelector('.sp-legend-header');
             if (headerEl) {
                 headerEl.style.background = 'transparent';
@@ -1109,21 +1123,34 @@ HTMLWidgets.widget({
                     legendDiv.appendChild(row);
                 });
             } else if (legendData.var_type === 'continuous') {
+                 // Clean colour-bar with axis-style tick labels.
                  const fmtV = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : (Math.abs(v) >= 1 ? v.toFixed(1) : v.toFixed(2)));
-                 const BH = 76; // gradient bar height (px)
-                 const row = document.createElement('div');
-                 row.style.cssText = 'display: flex; align-items: stretch; gap: 8px; margin-top: 4px;';
+                 const BH = 92;            // bar height (px)
+                 const lo = legendData.minVal, hi = legendData.maxVal;
+                 const wrap = document.createElement('div');
+                 wrap.style.cssText = `position: relative; height: ${BH}px; margin: 4px 0 2px;`;
                  const bar = document.createElement('div');
-                 bar.style.cssText = `width: 12px; height: ${BH}px; border-radius: 6px; border: 1px solid rgba(127,127,127,0.3); ` +
-                     `background: linear-gradient(to top, ${legendData.colors.join(',')});`;
-                 const lbls = document.createElement('div');
-                 lbls.style.cssText = `display: flex; flex-direction: column; justify-content: space-between; ` +
-                     `height: ${BH}px; font-size: ${fontSize - 2}px; opacity: 0.8;`;
-                 lbls.innerHTML = `<span>${fmtV(legendData.maxVal)}</span>` +
-                     `<span>${fmtV(legendData.midVal)}</span>` +
-                     `<span>${fmtV(legendData.minVal)}</span>`;
-                 row.appendChild(bar); row.appendChild(lbls);
-                 legendDiv.appendChild(row);
+                 bar.style.cssText = `position: absolute; left: 0; top: 0; width: 12px; height: ${BH}px; ` +
+                     `border-radius: 3px; background: linear-gradient(to top, ${legendData.colors.join(',')});`;
+                 wrap.appendChild(bar);
+                 const N = 5;
+                 let maxLabW = 0;
+                 for (let i = 0; i < N; i++) {
+                     const frac = i / (N - 1);                 // 0 (bottom) .. 1 (top)
+                     const topPx = (1 - frac) * BH;
+                     const v = lo + frac * (hi - lo);
+                     const tick = document.createElement('div');
+                     tick.style.cssText = `position: absolute; left: 12px; top: ${topPx}px; width: 4px; ` +
+                         `height: 1px; background: currentColor; opacity: 0.55;`;
+                     const lab = document.createElement('div');
+                     lab.style.cssText = `position: absolute; left: 19px; top: ${topPx}px; transform: translateY(-50%); ` +
+                         `font-size: ${fontSize - 2}px; opacity: 0.85; white-space: nowrap;`;
+                     lab.textContent = fmtV(v);
+                     wrap.appendChild(tick); wrap.appendChild(lab);
+                     maxLabW = Math.max(maxLabW, ('' + fmtV(v)).length);
+                 }
+                 wrap.style.width = (24 + maxLabW * (fontSize - 2) * 0.62) + 'px';
+                 legendDiv.appendChild(wrap);
             }
         };
 
@@ -1256,11 +1283,15 @@ HTMLWidgets.widget({
             box.setAttribute('width', 130); box.setAttribute('height', h);
             box.setAttribute('fill', 'white'); box.setAttribute('stroke', '#ddd'); box.setAttribute('rx', 4);
             g.appendChild(box);
-            if(d.title) {
+            // Match the on-screen title fallback (variable name when no explicit
+            // title) so the SVG legend isn't left untitled.
+            const legTitle = d.title || ((d.var_name && d.var_name !== 'Solid_Color')
+                ? d.var_name : (d.var_type === 'continuous' ? 'Value' : 'Legend'));
+            if(legTitle) {
                 const t = document.createElementNS(svgNS, 'text');
-                t.setAttribute('x', 65); t.setAttribute('y', 20); t.setAttribute('text-anchor', 'middle'); 
-                t.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif'); t.setAttribute('font-weight', 'bold'); t.setAttribute('font-size', '12'); 
-                t.textContent = d.title; g.appendChild(t);
+                t.setAttribute('x', 65); t.setAttribute('y', 20); t.setAttribute('text-anchor', 'middle');
+                t.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Liberation Sans", Roboto, "Helvetica Neue", Arial, sans-serif'); t.setAttribute('font-weight', 'bold'); t.setAttribute('font-size', '12');
+                t.textContent = legTitle; g.appendChild(t);
             }
             if (d.var_type === 'categorical') {
                 d.names.forEach((n, i) => {
@@ -1312,10 +1343,32 @@ HTMLWidgets.widget({
             const nPoints = rX ? rX.length : 0;
             const useVector = nPoints <= VECTOR_POINT_LIMIT;
             let svgContent = '';
-            const cpId = 'pc_' + Math.random().toString(36).substr(2,9);
+            const bgFill = (xData.backgroundColor) ? xData.backgroundColor : 'white';
             svgContent += `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`;
-            svgContent += `<rect width="${w}" height="${h}" fill="white"/>`;
-            if (useVector && d3Available && rX) {
+            svgContent += `<rect width="${w}" height="${h}" fill="${bgFill}"/>`;
+            // Embed the rendered canvas as the plot area so the SVG matches the
+            // on-screen plot EXACTLY (no aspect deformation); overlay crisp
+            // vector axes + legend on top. (The old vector-points path remapped
+            // the data range to the full canvas and stretched it.)
+            {
+                const cW2 = w - margin.left - margin.right;
+                const cH2 = h - margin.top - margin.bottom;
+                try {
+                    svgContent += `<image x="${margin.left}" y="${margin.top}" width="${cW2}" height="${cH2}" ` +
+                        `preserveAspectRatio="none" href="${canvas.toDataURL('image/png')}"/>`;
+                } catch (e) {}
+                if (svg) {
+                    const ser = new XMLSerializer();
+                    let axesStr = ser.serializeToString(svg.node());
+                    if (axesStr.startsWith('<svg')) axesStr = axesStr.substring(axesStr.indexOf('>') + 1, axesStr.lastIndexOf('<'));
+                    svgContent += axesStr;
+                }
+                if (legendDiv && legendDiv.style.display !== 'none' && xData.legend) {
+                    const legG = createLegendSVG(xData.legend, w);
+                    if (legG) { const ser = new XMLSerializer(); svgContent += ser.serializeToString(legG); }
+                }
+            }
+            if (false) {
                  const internalXScale = plot.get('xScale'); const internalYScale = plot.get('yScale');
                  let xDomExp, yDomExp;
                  if (internalXScale && internalYScale) {
@@ -1418,9 +1471,6 @@ HTMLWidgets.widget({
                     const legG = createLegendSVG(xData.legend, w);
                     if (legG) { const ser = new XMLSerializer(); svgContent += ser.serializeToString(legG); }
                  }
-            } else {
-                const imgData = canvas.toDataURL('image/png');
-                svgContent += `<image x="${margin.left}" y="${margin.top}" width="${w-margin.left-margin.right}" height="${h-margin.top-margin.bottom}" href="${imgData}"/>`;
             }
             svgContent += '</svg>';
             const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
@@ -1590,7 +1640,14 @@ HTMLWidgets.widget({
                     : (xData.performanceMode
                         ? (window.devicePixelRatio || 1)
                         : Math.max(window.devicePixelRatio || 1, 2));
-                if (!renderer) { renderer = reglMod.createRenderer({ pixelRatio: dpr }); }
+                // Share ONE WebGL renderer (context) across every widget on the
+                // page. Browsers cap live WebGL contexts (~16); a new context per
+                // plot/cell exhausts them and triggers context-loss ("GPU Error").
+                // regl-scatterplot supports a shared renderer for exactly this.
+                if (!window.__reglSharedRenderer) {
+                    window.__reglSharedRenderer = reglMod.createRenderer({ pixelRatio: dpr });
+                }
+                renderer = window.__reglSharedRenderer;
                 const intXScale = d3.scaleLinear().domain([-1,1]).range([0,cW]);
                 const intYScale = d3.scaleLinear().domain([-1,1]).range([cH,0]);
                 let initialAspectRatio = null;

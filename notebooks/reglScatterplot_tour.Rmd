@@ -205,9 +205,9 @@ server <- function(input, output, session) {
       colorBy = "celltype", plotId = "plot", toolbarPosition = "left")
   })
   output$info <- renderPrint({
-    sel <- input$plot_selected$indices            # 0-based from JS
+    sel <- as.integer(unlist(input$plot_selected$indices))  # JS sends a list -> coerce
     if (length(sel)) {
-      sub <- reglScatterExample[sel + 1L, ]         # the selected cells
+      sub <- reglScatterExample[sel + 1L, ]         # 0-based JS -> 1-based R
       table(sub$celltype)                           # composition; or run
     }                                               # scran/Seurat DE here
   })
