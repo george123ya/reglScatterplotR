@@ -35,11 +35,13 @@ const builds = [
   },
   {
     // Python (anywidget) bundle: an ESM module that loads the SAME widget via a
-    // tiny HTMLWidgets shim and drives it directly. Shipped in the reglscatterpy
-    // package so R and Python render the identical widget.
+    // tiny HTMLWidgets shim and drives it directly, so R and Python render the
+    // identical widget. The Python package (reglscatterpy) lives in its own repo
+    // and vendors this artifact - build it here, then run ./sync-python.sh to
+    // copy it into a sibling reglscatterpy checkout.
     ...shared,
     entryPoints: ["src/anywidget.js"],
-    outfile: "../python/src/reglscatterpy/static/widget.js",
+    outfile: "dist/widget.js",
     format: "esm",
     banner: { js: "/* reglScatterplot anywidget bundle - bundled, no CDN. Source: js/src/ */" },
   },

@@ -13,6 +13,11 @@ rendering **millions of two-dimensional points** in the browser via WebGL.
 Built for exploratory visualisation of single-cell, spatial transcriptomics
 and other high-dimensional biological data.
 
+> **Python?** A companion package,
+> [**reglscatterpy**](https://github.com/george123ya/reglscatterpy), drives the
+> same compiled widget from Python (AnnData / MuData / SpatialData) in Jupyter,
+> VS Code and Colab — so plots look identical across the two languages.
+
 ## Features
 
 - WebGL-accelerated point rendering — 5M points smoothly, 10M+ usable.
