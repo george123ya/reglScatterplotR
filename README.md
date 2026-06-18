@@ -4,7 +4,6 @@
 [![R-CMD-check](https://github.com/george123ya/reglScatterplotR/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/george123ya/reglScatterplotR/actions/workflows/R-CMD-check.yaml)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Codecov test coverage](https://codecov.io/gh/george123ya/reglScatterplotR/branch/main/graph/badge.svg)](https://app.codecov.io/gh/george123ya/reglScatterplotR)
 <!-- badges: end -->
 
 `reglScatterplotR` is an `htmlwidgets` interface to the JavaScript
@@ -27,7 +26,8 @@ and other high-dimensional biological data.
 - Lasso selection and synchronised pan/zoom across multiple widgets.
 - PNG / SVG / PDF export.
 - Shiny output / render bindings + custom-message handlers for live updates.
-- Native `SingleCellExperiment` / `SpatialExperiment` dispatch.
+- Single-line dispatch on `SingleCellExperiment`, `SpatialExperiment`, `Seurat`,
+  `Monocle3`, in-memory `AnnData` (`anndataR` / `anndata`), and plain matrices.
 - Works in the RStudio Viewer, Shiny apps, standalone HTML and Jupyter
   notebooks running `IRkernel`.
 
