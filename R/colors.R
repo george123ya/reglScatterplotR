@@ -138,7 +138,7 @@
             midVal = (c_min + c_max) / 2,
             var_type = "continuous",
             colors = p_hex,
-            title = legend_title %||% "Value",
+            title = legend_title,
             var_name = color_var_name
         )
         return(list(options = options, legend = legend_data, z = z_norm))

@@ -263,7 +263,7 @@ function createFilterPanel(container, entry, fontSize) {
     const accent = '#3b82f6';
     const wrap = document.createElement('div');
     wrap.className = 'sp-filter-wrapper';
-    wrap.style.cssText = 'position:absolute; top:10px; left:10px; z-index:998;' +
+    wrap.style.cssText = 'position:absolute; bottom:10px; left:10px; z-index:998;' +
         'background:' + bg + '; color:' + txt + '; border:1px solid ' + border + ';' +
         'border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:' + fontSize + 'px;' +
         'width:230px; max-height:min(92%,440px); overflow-y:auto; font-family:' + fam + ';';
@@ -317,9 +317,10 @@ function createFilterPanel(container, entry, fontSize) {
     document.addEventListener('mouseup', () => { dragging = false; });
 
     const fmt = (x) => (Math.abs(x) >= 100 ? x.toFixed(0) : (Math.abs(x) >= 1 ? x.toFixed(1) : x.toFixed(3)));
-    const NB = 36;       // histogram bins
-    const HH = 38;       // histogram height (px)
+    const NB = 36;       // density bins
+    const HH = 38;       // density height (px)
     const TH = 14;       // slider track/handle height (px)
+    let clipSeq = 0;     // unique clipPath ids per variable
 
     keys.forEach((key) => {
         const arr = data[key];
@@ -336,9 +337,7 @@ function createFilterPanel(container, entry, fontSize) {
             if (b < 0) b = 0; if (b >= NB) b = NB - 1;
             bins[b]++;
         }
-        const maxC = Math.max.apply(null, bins) || 1;
-        // sqrt scale so small-count bins stay visible next to tall ones
-        const barH = (c) => Math.max(2, Math.round(Math.sqrt(c / maxC) * HH));
+        const maxC = Math.max.apply(null, bins) || 1; // sqrt-scaled for visibility
 
         let curLo = lo, curHi = hi;
 
@@ -351,17 +350,35 @@ function createFilterPanel(container, entry, fontSize) {
         const area = document.createElement('div');
         area.style.cssText = 'position:relative; height:' + (HH + TH) + 'px; touch-action:none;';
 
-        const histo = document.createElement('div');
-        histo.style.cssText = 'position:absolute; top:0; left:0; right:0; height:' + HH +
-            'px; display:flex; align-items:flex-end; gap:1px;';
-        const barEls = [];
+        // Smooth density area (SVG). A muted base path shows the full
+        // distribution; a brighter copy clipped to [curLo, curHi] highlights the
+        // selected range.
+        const ns = 'http://www.w3.org/2000/svg';
+        let dPath = 'M 0 ' + HH + ' ';
         for (let i = 0; i < NB; i++) {
-            const bar = document.createElement('div');
-            bar.style.cssText = 'flex:1; height:' + barH(bins[i]) + 'px; background:' + accent +
-                '; border-radius:1px 1px 0 0; transition:opacity 0.08s;';
-            histo.appendChild(bar); barEls.push(bar);
+            const x = (NB === 1 ? 0 : i / (NB - 1) * 100);
+            const y = HH - Math.sqrt(bins[i] / maxC) * (HH - 2);
+            dPath += 'L ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' ';
         }
-        area.appendChild(histo);
+        dPath += 'L 100 ' + HH + ' Z';
+        const clipId = 'spden-' + (entry.plotId || 'p') + '-' + clipSeq++;
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('viewBox', '0 0 100 ' + HH);
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.style.cssText = 'position:absolute; top:0; left:0; width:100%; height:' + HH + 'px;';
+        const defs = document.createElementNS(ns, 'defs');
+        const clip = document.createElementNS(ns, 'clipPath'); clip.setAttribute('id', clipId);
+        const clipRect = document.createElementNS(ns, 'rect');
+        clipRect.setAttribute('x', '0'); clipRect.setAttribute('y', '0');
+        clipRect.setAttribute('width', '100'); clipRect.setAttribute('height', String(HH));
+        clip.appendChild(clipRect); defs.appendChild(clip); svg.appendChild(defs);
+        const baseP = document.createElementNS(ns, 'path');
+        baseP.setAttribute('d', dPath); baseP.setAttribute('fill', accent); baseP.setAttribute('opacity', '0.22');
+        const hiP = document.createElementNS(ns, 'path');
+        hiP.setAttribute('d', dPath); hiP.setAttribute('fill', accent); hiP.setAttribute('opacity', '0.85');
+        hiP.setAttribute('clip-path', 'url(#' + clipId + ')');
+        svg.appendChild(baseP); svg.appendChild(hiP);
+        area.appendChild(svg);
 
         const trackY = (TH - 4) / 2;
         const track = document.createElement('div');
@@ -392,10 +409,8 @@ function createFilterPanel(container, entry, fontSize) {
             hHi.style.left = (fHi * 100) + '%';
             sel.style.left = (fLo * 100) + '%';
             sel.style.width = ((fHi - fLo) * 100) + '%';
-            for (let i = 0; i < NB; i++) {
-                const c = lo + (i + 0.5) / NB * span;
-                barEls[i].style.opacity = (c >= curLo && c <= curHi) ? '1' : '0.22';
-            }
+            clipRect.setAttribute('x', String(fLo * 100));
+            clipRect.setAttribute('width', String((fHi - fLo) * 100));
             label.textContent = key + ': ' + fmt(curLo) + ' – ' + fmt(curHi);
         };
         redraw();
@@ -963,7 +978,10 @@ HTMLWidgets.widget({
             
             const titleEl = legendWrapper.querySelector('.sp-legend-title');
             if(titleEl) {
-                titleEl.innerText = legendData.title || "Legend";
+                const vName = (legendData.var_name && legendData.var_name !== 'Solid_Color')
+                    ? legendData.var_name : null;
+                titleEl.innerText = legendData.title || vName ||
+                    (legendData.var_type === 'continuous' ? 'Value' : 'Legend');
                 // The stylesheet pins this to var(--text-sub), which RStudio's
                 // dark Qt theme overrides to a light colour (the "white legend
                 // title" bug). Force it to the configured legend text colour.
@@ -1081,15 +1099,17 @@ HTMLWidgets.widget({
                     legendDiv.appendChild(row);
                 });
             } else if (legendData.var_type === 'continuous') {
-                 const gradContainer = document.createElement('div');
-                 gradContainer.style.cssText = 'display: flex; align-items: flex-start; margin-top: 5px;';
-                 const grad = document.createElement('div');
-                 grad.style.cssText = `width: 10px; height: 80px; background: linear-gradient(to top, ${legendData.colors.join(',')}); border-radius: 2px; margin-right: 6px;`;
+                 const fmtV = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : (Math.abs(v) >= 1 ? v.toFixed(1) : v.toFixed(2)));
+                 const wrap = document.createElement('div');
+                 wrap.style.cssText = 'margin-top: 4px; min-width: 132px;';
+                 const bar = document.createElement('div');
+                 bar.style.cssText = `height: 10px; border-radius: 5px; border: 1px solid rgba(127,127,127,0.3); ` +
+                     `background: linear-gradient(to right, ${legendData.colors.join(',')});`;
                  const lbls = document.createElement('div');
-                 lbls.style.cssText = `display: flex; flex-direction: column; justify-content: space-between; height: 80px; color: inherit; font-size: ${fontSize-1}px;`;
-                 lbls.innerHTML = `<span>${legendData.maxVal.toFixed(1)}</span><span>${legendData.midVal.toFixed(1)}</span><span>${legendData.minVal.toFixed(1)}</span>`;
-                 gradContainer.appendChild(grad); gradContainer.appendChild(lbls);
-                 legendDiv.appendChild(gradContainer);
+                 lbls.style.cssText = `display: flex; justify-content: space-between; margin-top: 4px; font-size: ${fontSize - 2}px; opacity: 0.75;`;
+                 lbls.innerHTML = `<span>${fmtV(legendData.minVal)}</span><span>${fmtV(legendData.midVal)}</span><span>${fmtV(legendData.maxVal)}</span>`;
+                 wrap.appendChild(bar); wrap.appendChild(lbls);
+                 legendDiv.appendChild(wrap);
             }
         };
 

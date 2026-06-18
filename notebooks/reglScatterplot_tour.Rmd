@@ -201,6 +201,11 @@ reglScatterplot(reglScatterExample,
 )
 ```
 
+> **Reading the lasso selection in R.** The selection is reported to Shiny as
+> `input$<plotId>_selected` (see section 11). Unlike the Python package's
+> `w.selection`, a *static* R Markdown has no channel to send it back to R — use
+> Shiny (or the `sp-selection` DOM event from JS) for that round-trip.
+
 ## 7.3 Encode size / opacity by data
 
 Map a numeric variable to point size or opacity (they share one channel).
