@@ -38,6 +38,8 @@
 #' @param sizeBy,opacityBy Optional numeric column name or vector mapped to point
 #'   size / opacity. They share one data channel, so both encode the same
 #'   variable.
+#' @param tooltipBy Optional extra fields to show on hover: column name(s) (when
+#'   `data` is a data.frame) or a data.frame / named list of vectors.
 #' @param pixelRatio Optional numeric device-pixel-ratio for the WebGL backing
 #'   store. When `NULL` (default) the widget renders at `max(devicePixelRatio,
 #'   2)` for crisp output - this matters in the RStudio Viewer, an embedded
@@ -175,6 +177,7 @@ reglScatterplot <- function(data = NULL,
                             pointColor = NULL,
                             sizeBy = NULL,
                             opacityBy = NULL,
+                            tooltipBy = NULL,
                             pixelRatio = NULL,
                             categoricalPalette = "Set1",
                             continuousPalette = "viridis",
@@ -252,7 +255,7 @@ reglScatterplot <- function(data = NULL,
             filterBy = filterBy,
             pointSize = pointSize, opacity = opacity, pointColor = pointColor,
             pixelRatio = pixelRatio,
-            sizeBy = sizeBy, opacityBy = opacityBy,
+            sizeBy = sizeBy, opacityBy = opacityBy, tooltipBy = tooltipBy,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette, customColors = customColors,
@@ -295,7 +298,7 @@ reglScatterplot <- function(data = NULL,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
             pixelRatio = pixelRatio,
-            sizeBy = sizeBy, opacityBy = opacityBy,
+            sizeBy = sizeBy, opacityBy = opacityBy, tooltipBy = tooltipBy,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -346,7 +349,7 @@ reglScatterplot <- function(data = NULL,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
             pixelRatio = pixelRatio,
-            sizeBy = sizeBy, opacityBy = opacityBy,
+            sizeBy = sizeBy, opacityBy = opacityBy, tooltipBy = tooltipBy,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -403,7 +406,7 @@ reglScatterplot <- function(data = NULL,
             pointSize = pointSize, opacity = opacity,
             pointColor = pointColor,
             pixelRatio = pixelRatio,
-            sizeBy = sizeBy, opacityBy = opacityBy,
+            sizeBy = sizeBy, opacityBy = opacityBy, tooltipBy = tooltipBy,
             categoricalPalette = categoricalPalette,
             continuousPalette = continuousPalette,
             customPalette = customPalette,
@@ -563,6 +566,34 @@ reglScatterplot <- function(data = NULL,
         w_payload <- .toBase64U16Unit(w_unit)
     }
 
+    ## ---- extra hover fields (tooltipBy) ---------------------------------
+    ## Column name(s) when `data` is a data.frame, or a data.frame / named list
+    ## of vectors. Numeric -> raw float; categorical -> integer codes + levels.
+    tooltip_payload <- NULL
+    if (!is.null(tooltipBy)) {
+        tt <- if (is.character(tooltipBy) && !is.null(data) && is.data.frame(data)) {
+            stats::setNames(lapply(tooltipBy, function(cn) data[[cn]]), tooltipBy)
+        } else if (is.data.frame(tooltipBy)) {
+            as.list(tooltipBy)
+        } else if (is.list(tooltipBy)) {
+            tooltipBy
+        } else {
+            stop("'tooltipBy' must be column name(s) (with a data.frame), or a ",
+                "data.frame / named list of vectors.", call. = FALSE)
+        }
+        tooltip_payload <- lapply(names(tt), function(nm) {
+            v <- tt[[nm]]
+            if (is.numeric(v)) {
+                list(name = nm, kind = "num", data = toBase64(as.numeric(v)))
+            } else {
+                f <- as.factor(v)
+                list(name = nm, kind = "cat",
+                    codes = .toBase64U16Int(as.integer(f) - 1L),
+                    levels = I(as.character(levels(f))))
+            }
+        })
+    }
+
     margins <- margins %||% list(top = 20, right = 20, bottom = 40, left = 50)
 
     legend_anchor <- .resolveLegendPosition(legendPosition)
@@ -586,6 +617,7 @@ reglScatterplot <- function(data = NULL,
         w = w_payload,
         sizeBy = !is.null(size_vec),
         opacityBy = !is.null(opacity_vec),
+        tooltip_data = tooltip_payload,
         legendBg = legendBg, legendText = legendText,
         legendOpacity = legendOpacity, legendBlur = legendBlur,
         toolbarPosition = toolbarPosition, zoomOnSelection = isTRUE(zoomOnSelection),

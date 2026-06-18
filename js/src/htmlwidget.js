@@ -1862,6 +1862,15 @@ HTMLWidgets.widget({
                 window.__spUnsubscribers[plotId].push(unsubDeselect);
 
                 if (xData.showTooltip && tooltip) {
+                    // Extra hover fields (tooltipBy): numeric -> raw float buffer;
+                    // categorical -> integer codes + level labels.
+                    let tooltipFields = [];
+                    if (Array.isArray(xData.tooltip_data)) {
+                        tooltipFields = xData.tooltip_data.map((f) => (f.kind === 'num')
+                            ? { name: f.name, kind: 'num', arr: decodeBase64(f.data) }
+                            : { name: f.name, kind: 'cat', codes: decodeBase64(f.codes), levels: f.levels });
+                    }
+                    const colorVarName = (xData.colorVar && xData.colorVar !== 'Solid_Color') ? xData.colorVar : 'Value';
                     const unsubOver = plot.subscribe('pointOver', (i) => {
                         const nx = dataBuffers.x[i]; const ny = dataBuffers.y[i];
                         const ox = xDomainOrig[0] + (nx+1)/2 * (xDomainOrig[1]-xDomainOrig[0]);
@@ -1872,7 +1881,14 @@ HTMLWidgets.widget({
                         if(dataBuffers.z && xData.legend) {
                             const z = dataBuffers.z[i]; let val = z.toFixed(2);
                             if(xData.legend.var_type==='categorical') { const idx = Math.floor(z); if(xData.legend.names[idx]) val = xData.legend.names[idx]; } else if(xData.legend.var_type==='continuous') { val = (xData.legend.minVal + z * (xData.legend.maxVal-xData.legend.minVal)).toFixed(2); }
-                            txt += `<br>Value: ${val}`;
+                            txt += `<br>${colorVarName}: ${val}`;
+                        }
+                        for (let f = 0; f < tooltipFields.length; f++) {
+                            const fl = tooltipFields[f];
+                            let v;
+                            if (fl.kind === 'num') { v = fl.arr[i]; v = (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2)); }
+                            else { const ci = Math.round(fl.codes[i]); v = (fl.levels && fl.levels[ci] !== undefined) ? fl.levels[ci] : '?'; }
+                            txt += `<br>${fl.name}: ${v}`;
                         }
                         const [px,py] = plot.getScreenPosition(i);
                         tooltip.innerHTML = txt; tooltip.style.display = 'block'; tooltip.style.left = (px+margin.left+10)+'px'; tooltip.style.top = (py+margin.top)+'px';
