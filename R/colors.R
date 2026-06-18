@@ -105,6 +105,7 @@
         legend_data <- list(
             names = I(lvls),
             colors = I(as.vector(hex_cols)),
+            counts = unname(as.integer(table(f)[lvls])),
             var_type = "categorical",
             title = legend_title,
             var_name = color_var_name

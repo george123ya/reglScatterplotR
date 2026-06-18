@@ -98,6 +98,18 @@ const decodeBase64 = (base64Str) => {
     return new Float32Array(base64Str);
 };
 
+// Convert a #rrggbb (or shorthand/already-rgba) colour to an rgba() string at
+// the given alpha. Used for the frosted-glass legend background.
+function hexToRgba(hex, alpha) {
+    if (typeof hex !== 'string' || hex[0] !== '#') return hex; // pass through non-hex
+    let h = hex.slice(1);
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // --- GARBAGE COLLECTOR ---
 const cleanUpZombies = () => {
     globalRegistry.forEach((entry, pid) => {
@@ -662,11 +674,12 @@ HTMLWidgets.widget({
                     white-space: nowrap; /* CRITICAL: Prevent text wrapping resizing the box awkwardly */
                     overflow: hidden; text-overflow: ellipsis;
                 }
-                .sp-legend-item:hover { background-color: rgba(0,0,0,0.03); border-radius: 4px; }
-                .sp-color-swatch { width: 16px; height: 16px; margin-right: 8px; flex-shrink: 0; cursor: pointer; padding: 0; border: 1px solid rgba(0,0,0,0.2); border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+                .sp-legend-item:hover { background-color: rgba(128,128,128,0.14); border-radius: 6px; }
+                .sp-legend-count { margin-left: auto; padding-left: 10px; font-size: 11px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+                .sp-color-swatch { width: 13px; height: 13px; margin-right: 9px; flex-shrink: 0; cursor: pointer; padding: 0; border: 1px solid rgba(0,0,0,0.25); border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
                 .sp-color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
-                .sp-color-swatch::-webkit-color-swatch { border: none; border-radius: 2px; }
-                .sp-color-swatch::-moz-color-swatch { border: none; border-radius: 2px; }
+                .sp-color-swatch::-webkit-color-swatch { border: none; border-radius: 50%; }
+                .sp-color-swatch::-moz-color-swatch { border: none; border-radius: 50%; }
                 .sp-loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; position: absolute; top: 50%; left: 50%; margin-top: -15px; margin-left: -15px; z-index: 50; display: none; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             `;
@@ -750,9 +763,13 @@ HTMLWidgets.widget({
 
         const createLegend = async function(container, legendData, fontSize = 12) {
             const entry = globalRegistry.get(plotId);
-            const bg = entry.legendBg || 'var(--bg-card, #ffffff)';
-            const txt = entry.legendText || 'var(--text-main, #222)';
+            const bg = entry.legendBg || '#ffffff';
+            const txt = entry.legendText || '#222222';
             const border = (txt.includes('#222') || txt === '#222') ? 'var(--border-color, #eee)' : 'var(--border-color, #475569)';
+            // Frosted-glass card: translucent bg + blur, both tunable.
+            const legOpacity = (typeof entry.legendOpacity === 'number') ? entry.legendOpacity : 0.55;
+            const legBlur = (typeof entry.legendBlur === 'number') ? entry.legendBlur : 10;
+            const frostedBg = hexToRgba(bg, legOpacity);
 
             if (!legendData || !legendData.var_type || legendData.var_type === 'none') {
                 if (legendWrapper) legendWrapper.style.display = 'none';
@@ -910,16 +927,16 @@ HTMLWidgets.widget({
             }
 
             legendWrapper.style.display = 'flex';
-            legendWrapper.style.background = bg;
+            legendWrapper.style.background = frostedBg;
+            legendWrapper.style.backdropFilter = legBlur > 0 ? `blur(${legBlur}px) saturate(120%)` : 'none';
+            legendWrapper.style.webkitBackdropFilter = legendWrapper.style.backdropFilter;
             legendWrapper.style.borderColor = border;
             legendWrapper.style.color = txt;
-            // The header has its own (light) background var that does not follow
-            // legendBg - on a dark legend it shows as a white strip. Match it to
-            // the legend background so the whole legend is one colour.
+            // Header blends into the frosted card (no separate strip).
             const headerEl = legendWrapper.querySelector('.sp-legend-header');
             if (headerEl) {
-                headerEl.style.background = bg;
-                headerEl.style.borderBottomColor = border;
+                headerEl.style.background = 'transparent';
+                headerEl.style.borderBottomColor = 'transparent';
             }
             
             const titleEl = legendWrapper.querySelector('.sp-legend-title');
@@ -1022,7 +1039,15 @@ HTMLWidgets.widget({
                               window.Shiny.setInputValue("legend_selection_change", { variable: myVar, allowed_names: allowedNames, timestamp: Date.now() });
                           }
                     };
-                    row.appendChild(label); legendDiv.appendChild(row);
+                    row.appendChild(label);
+                    // Optional per-category point count (right-aligned).
+                    if (legendData.counts && legendData.counts[i] != null) {
+                        const cnt = document.createElement('span');
+                        cnt.className = 'sp-legend-count';
+                        cnt.textContent = Number(legendData.counts[i]).toLocaleString();
+                        row.appendChild(cnt);
+                    }
+                    legendDiv.appendChild(row);
                 });
             } else if (legendData.var_type === 'continuous') {
                  const gradContainer = document.createElement('div');
@@ -1665,6 +1690,8 @@ HTMLWidgets.widget({
                     activeStrainers: {}, indexFilters: new Map(), categorySelections: new Map(),
                     legendBg: xData.legendBg,
                     legendText: xData.legendText,
+                    legendOpacity: xData.legendOpacity,
+                    legendBlur: xData.legendBlur,
                     legendAnchor: xData.legendAnchor,
                     draggableLegend: xData.draggableLegend !== false,
                     autoAdjustZoom: autoAdjustZoom,

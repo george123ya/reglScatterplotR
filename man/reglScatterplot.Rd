@@ -37,6 +37,8 @@ reglScatterplot(
   axisColor = "#333333",
   legendBg = "#ffffff",
   legendText = "#000000",
+  legendOpacity = NULL,
+  legendBlur = NULL,
   legendPosition = "top-right",
   draggableLegend = TRUE,
   width = NULL,
@@ -131,6 +133,12 @@ to be symmetric around zero (useful for log-fold-change displays).}
 
 \item{backgroundColor, axisColor, legendBg, legendText}{Hex colour overrides
 for cosmetic styling.}
+
+\item{legendOpacity}{Opacity (0-1) of the frosted legend card background.
+\code{NULL} (default) uses \code{0.55}.}
+
+\item{legendBlur}{Backdrop blur in pixels behind the legend card. \code{NULL}
+(default) uses \code{10}; set \code{0} to disable the frosted effect.}
 
 \item{legendPosition}{Starting position of the legend. One of
 \code{"top-right"} (default), \code{"top-left"}, \code{"bottom-right"}, \code{"bottom-left"},
