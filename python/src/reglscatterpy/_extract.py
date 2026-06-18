@@ -158,8 +158,16 @@ def _from_mudata(mdata, x, y, color_by, group_by, layer, dims) -> PlotData:
                 return _resolve_anndata_vec(mdata.mod[mod], key, layer)
         return None
 
-    basis = _resolve_basis(mdata, x)
-    coords = np.asarray(mdata.obsm[basis])
+    # Embedding: support a global MuData embedding ("X_umap") or a per-modality
+    # one ("rna:X_umap", stored on mdata['rna'].obsm).
+    if isinstance(x, str) and ":" in x and x.split(":", 1)[0] in mdata.mod:
+        mod, key = x.split(":", 1)
+        sub = mdata.mod[mod]
+        basis = _resolve_basis(sub, key)
+        coords = np.asarray(sub.obsm[basis])
+    else:
+        basis = _resolve_basis(mdata, x)
+        coords = np.asarray(mdata.obsm[basis])
     d0, d1 = (dims or (0, 1))
 
     def resolve_global(spec):

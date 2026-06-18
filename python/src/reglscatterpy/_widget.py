@@ -35,6 +35,8 @@ def _make_class():
         _esm = _STATIC
         _spec = traitlets.Dict().tag(sync=True)
         _height = traitlets.Int(500).tag(sync=True)
+        # 0 => responsive (100% of the cell); a positive value => fixed px width.
+        _width = traitlets.Int(0).tag(sync=True)
 
         def update(self, spec: dict) -> "ReglScatter":
             """Swap in a new payload and re-render in place."""

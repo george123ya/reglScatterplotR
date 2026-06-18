@@ -5,6 +5,7 @@ cases, pandas / anndata (skipped when missing).
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from reglscatterpy import extract
@@ -105,3 +106,32 @@ def test_anndata_sparse_gene():
     adata.X = sparse.csr_matrix(adata.X)
     pd_ = extract(adata, x="umap", color_by="Gene1")
     assert pd_.color.ndim == 1 and pd_.color.shape[0] == adata.n_obs
+
+
+def test_mudata_per_modality_embedding_and_feature():
+    """MuData: 'rna:X_umap' embedding + colour from either modality."""
+    mu = pytest.importorskip("mudata")
+    ad = pytest.importorskip("anndata")
+    rng = np.random.default_rng(0)
+    m = 100
+    idx = [f"c{i}" for i in range(m)]
+    rna = ad.AnnData(
+        rng.poisson(2, (m, 10)).astype(float),
+        obs=pd.DataFrame({"celltype": pd.Categorical(rng.choice(list("TBN"), m))}, index=idx),
+        var=pd.DataFrame(index=[f"Gene{i}" for i in range(10)]),
+    )
+    rna.obsm["X_umap"] = rng.normal(0, 1, (m, 2))
+    adt = ad.AnnData(
+        rng.poisson(5, (m, 4)).astype(float),
+        obs=pd.DataFrame(index=idx),
+        var=pd.DataFrame(index=[f"AB{i}" for i in range(4)]),
+    )
+    mdata = mu.MuData({"rna": rna, "adt": adt})
+
+    p1 = extract(mdata, x="rna:X_umap", color_by="rna:celltype")
+    assert p1.n == m and p1.x.shape[0] == m
+    assert not np.issubdtype(np.asarray(p1.color).dtype, np.number)  # categorical
+
+    p2 = extract(mdata, x="rna:X_umap", color_by="adt:AB0")          # cross-modality feature
+    assert p2.n == m
+    assert np.issubdtype(np.asarray(p2.color).dtype, np.number)      # continuous

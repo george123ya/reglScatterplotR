@@ -30,6 +30,11 @@
   **dual-handle range brush**; dragging the handles selects a range, dims the
   out-of-range bars and filters the points live. Previously the slider UI only
   existed when a Shiny app supplied it (the data was loaded but nothing showed).
+* **Per-plot filter/legend state.** Legend category toggling and `filterBy`
+  ranges are now scoped to each plot instead of a page-global registry, so
+  independent plots on one page (e.g. several widgets in a Jupyter notebook,
+  which all share `window`) no longer filter each other. Shiny still broadcasts
+  filters across a dashboard via its message handlers.
 * **Legend dragging no longer stretches the box.** A bottom-/right-anchored
   legend kept its far-edge anchor when dragged, pinning all four edges so it
   ballooned to full height. Dragging now re-anchors to top/left cleanly. Legend

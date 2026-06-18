@@ -7,10 +7,14 @@ make_toy_seurat <- function(n = 120L, g = 15L) {
     rownames(counts) <- paste0("Gene", seq_len(g))
     colnames(counts) <- paste0("Cell", seq_len(n))
 
-    obj <- SeuratObject::CreateSeuratObject(counts = counts)
+    ## suppressWarnings: SeuratObject coerces the dense toy matrix to dgCMatrix
+    ## and says so - test-setup noise, not behaviour under test.
+    obj <- suppressWarnings(SeuratObject::CreateSeuratObject(counts = counts))
     ## Populate a "data" (log-normalised-ish) layer without needing Seurat's
     ## NormalizeData(); FetchData reads features from here.
-    SeuratObject::LayerData(obj, layer = "data") <- log1p(counts)
+    suppressWarnings(
+        SeuratObject::LayerData(obj, layer = "data") <- log1p(counts)
+    )
 
     obj$celltype <- factor(sample(c("A", "B", "C"), n, replace = TRUE))
 

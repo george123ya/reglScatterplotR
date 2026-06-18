@@ -22,16 +22,24 @@ function mount(el, model) {
 
   const spec = model.get("_spec") || {};
   const h = model.get("_height");
+  const w = model.get("_width");
 
   const container = document.createElement("div");
-  container.style.width = "100%";
+  // A positive width => fixed px (like matplotlib / plotly); 0 / null => 100%.
+  container.style.width = (typeof w === "number" && w > 0) ? w + "px" : "100%";
   container.style.height = typeof h === "number" ? h + "px" : h || "500px";
   container.style.position = "relative";
+  // Paint the container (incl. the axis margins) with the plot background so a
+  // dark theme has no white border/contour around the canvas.
+  if (spec.backgroundColor) {
+    container.style.background = spec.backgroundColor;
+    el.style.background = spec.backgroundColor;
+  }
   el.appendChild(container);
 
   // anywidget output cells can report a zero size on first paint; fall back to
   // sensible defaults and let the ResizeObserver correct things once laid out.
-  const w0 = container.clientWidth || el.clientWidth || 700;
+  const w0 = container.clientWidth || ((typeof w === "number" && w > 0) ? w : el.clientWidth || 700);
   const h0 = container.clientHeight || (typeof h === "number" ? h : 500);
 
   const inst = def.factory(container, w0, h0);

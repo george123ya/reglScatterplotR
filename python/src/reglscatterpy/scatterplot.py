@@ -68,7 +68,7 @@ def scatterplot(
     filter_by: Any = None,
     point_labels: Optional[Sequence] = None,
     plot_id: Optional[str] = None,
-    width: Optional[int] = None,
+    width: Optional[int] = 700,
     height: int = 500,
     backend: str = "regl",
     show: bool = True,
@@ -157,6 +157,7 @@ def scatterplot(
 
     widget = ReglScatter()
     widget._height = int(height)
+    widget._width = int(width) if width else 0   # 0 => responsive (100%)
     widget._spec = spec
     return widget
 

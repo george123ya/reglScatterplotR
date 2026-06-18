@@ -40,13 +40,9 @@ if (!window.__myScatterplotRegistry) {
   window.__myScatterplotRegistry.isSyncing = false;       
   window.__myScatterplotRegistry.syncLeader = null;       
   window.__myScatterplotRegistry.leaderTimeout = null;
-  
-  window.__myScatterplotRegistry.activeStrainers = {}; 
-  
-  // --- COMMITTEE FILTER STATE ---
-  window.__myScatterplotRegistry.indexFilters = new Map(); 
-  window.__myScatterplotRegistry.categorySelections = new Map(); 
-  
+  // Filter / legend-selection state is stored per-plot on each registry entry
+  // (entry.activeStrainers / indexFilters / categorySelections), so independent
+  // plots sharing one page never affect each other.
   window.__myScatterplotRegistry.n_points = 0; // placeholder set per render
 }
 
@@ -135,13 +131,17 @@ function recalcAndApplyFilters(entry) {
     if (!entry || !entry.plot) return;
 
     const n = entry.n_points;
-    const strainers = globalRegistry.activeStrainers;
+    // Filter state is per-plot so independent plots on the same page (e.g.
+    // several widgets in one Jupyter notebook, which all share `window`) do not
+    // affect each other when you toggle a legend category or drag a filter.
+    const strainers = entry.activeStrainers || (entry.activeStrainers = {});
     const strainerKeys = Object.keys(strainers);
     const hasStrainers = (strainerKeys.length > 0);
     const hasServerFilter = (entry.serverIndices && entry.serverIndices.length > 0);
-    
-    // 1. Get all active categorical filters (The Committee)
-    const activeVarFilters = Array.from(globalRegistry.indexFilters.values());
+
+    // 1. Active categorical (legend) filters for this plot
+    if (!entry.indexFilters) entry.indexFilters = new Map();
+    const activeVarFilters = Array.from(entry.indexFilters.values());
     const hasCatFilters = (activeVarFilters.length > 0);
 
     // If NO constraints anywhere, unfilter
@@ -375,9 +375,10 @@ function createFilterPanel(container, entry, fontSize) {
         redraw();
 
         const apply = () => {
-            if (curLo <= lo && curHi >= hi) delete globalRegistry.activeStrainers[key];
-            else globalRegistry.activeStrainers[key] = [curLo, curHi];
-            globalRegistry.forEach((e) => { if (e.plot && !e.plot._destroyed) recalcAndApplyFilters(e); });
+            if (!entry.activeStrainers) entry.activeStrainers = {};
+            if (curLo <= lo && curHi >= hi) delete entry.activeStrainers[key];
+            else entry.activeStrainers[key] = [curLo, curHi];
+            recalcAndApplyFilters(entry);
         };
 
         const startDrag = (which) => (ev) => {
@@ -487,9 +488,14 @@ if (typeof Shiny !== 'undefined') {
   });
 
   Shiny.addCustomMessageHandler('update_filter_range', function(msg) {
-      if (msg.range === null) delete globalRegistry.activeStrainers[msg.variable];
-      else globalRegistry.activeStrainers[msg.variable] = msg.range;
-      globalRegistry.forEach(entry => { if (entry.plot && !entry.plot._destroyed) recalcAndApplyFilters(entry); });
+      // Shiny intentionally broadcasts a range filter to every plot (dashboard
+      // model); write the per-plot strainer on each entry and re-filter it.
+      globalRegistry.forEach(entry => {
+          if (!entry.activeStrainers) entry.activeStrainers = {};
+          if (msg.range === null) delete entry.activeStrainers[msg.variable];
+          else entry.activeStrainers[msg.variable] = msg.range;
+          if (entry.plot && !entry.plot._destroyed) recalcAndApplyFilters(entry);
+      });
   });
   
   Shiny.addCustomMessageHandler('clear_plot_selection', function(msg) {
@@ -736,8 +742,9 @@ HTMLWidgets.widget({
         const updateLegendUI = function() {
             if (!legendDiv) return;
             const items = legendDiv.querySelectorAll('.sp-legend-item');
-            const myVar = globalRegistry.get(plotId).legend?.var_name;
-            const mySelections = globalRegistry.categorySelections.get(myVar);
+            const _e = globalRegistry.get(plotId);
+            const myVar = _e.legend?.var_name;
+            const mySelections = _e.categorySelections && _e.categorySelections.get(myVar);
             
             items.forEach((item, idx) => {
                 if (mySelections) {
@@ -948,7 +955,7 @@ HTMLWidgets.widget({
                     row.style.cssText = 'display: flex; align-items: center; margin-bottom: 2px; padding: 1px 4px; position: relative; cursor: pointer;';
                     
                     const myVar = legendData.var_name;
-                    const mySelections = globalRegistry.categorySelections.get(myVar);
+                    const mySelections = entry.categorySelections && entry.categorySelections.get(myVar);
                     if (mySelections && !mySelections.has(i)) {
                         row.style.opacity = '0.3';
                     }
@@ -987,35 +994,38 @@ HTMLWidgets.widget({
                     
                     row.onclick = (e) => {
                           if (e.target.closest('.pcr-app')) return;
-                          let activeSet = globalRegistry.categorySelections.get(myVar);
+                          const entry = globalRegistry.get(plotId);
+                          if (!entry.categorySelections) entry.categorySelections = new Map();
+                          if (!entry.indexFilters) entry.indexFilters = new Map();
+                          let activeSet = entry.categorySelections.get(myVar);
                           if (e.shiftKey && lastClickedCategoryIndex !== -1) {
-                            const start = Math.min(lastClickedCategoryIndex, i); 
+                            const start = Math.min(lastClickedCategoryIndex, i);
                             const end = Math.max(lastClickedCategoryIndex, i);
                             if (!activeSet) activeSet = new Set();
                             for(let k=start; k<=end; k++) activeSet.add(k);
-                            globalRegistry.categorySelections.set(myVar, activeSet);
+                            entry.categorySelections.set(myVar, activeSet);
                           } else if (e.ctrlKey || e.metaKey) {
-                            if (!activeSet) { activeSet = new Set([i]); } 
+                            if (!activeSet) { activeSet = new Set([i]); }
                             else { if (activeSet.has(i)) { activeSet.delete(i); if (activeSet.size === 0) activeSet = null; } else activeSet.add(i); }
-                            if (activeSet) globalRegistry.categorySelections.set(myVar, activeSet);
-                            else globalRegistry.categorySelections.delete(myVar);
+                            if (activeSet) entry.categorySelections.set(myVar, activeSet);
+                            else entry.categorySelections.delete(myVar);
                           } else {
-                            if (activeSet && activeSet.size === 1 && activeSet.has(i)) { globalRegistry.categorySelections.delete(myVar); } 
-                            else { activeSet = new Set([i]); globalRegistry.categorySelections.set(myVar, activeSet); }
+                            if (activeSet && activeSet.size === 1 && activeSet.has(i)) { entry.categorySelections.delete(myVar); }
+                            else { activeSet = new Set([i]); entry.categorySelections.set(myVar, activeSet); }
                           }
                           lastClickedCategoryIndex = i;
-                          const entry = globalRegistry.get(plotId);
-                          const currentSelections = globalRegistry.categorySelections.get(myVar);
-                          if (!currentSelections) { globalRegistry.indexFilters.delete(myVar); } 
+                          const currentSelections = entry.categorySelections.get(myVar);
+                          if (!currentSelections) { entry.indexFilters.delete(myVar); }
                           else {
                               const newIndexSet = new Set();
                               const n = entry.n_points;
                               let buffer = null;
                               if (entry.colorVar === myVar) buffer = entry.zData;
                               else if (entry.groupVar === myVar) buffer = entry.categoryData;
-                              if (buffer) { for(let p=0; p<n; p++) { if (currentSelections.has(Math.round(buffer[p]))) { newIndexSet.add(p); } } globalRegistry.indexFilters.set(myVar, newIndexSet); } 
+                              if (buffer) { for(let p=0; p<n; p++) { if (currentSelections.has(Math.round(buffer[p]))) { newIndexSet.add(p); } } entry.indexFilters.set(myVar, newIndexSet); }
                           }
-                          globalRegistry.forEach(entry => { if(entry.updateLegendUI) entry.updateLegendUI(); recalcAndApplyFilters(entry); });
+                          if (entry.updateLegendUI) entry.updateLegendUI();
+                          recalcAndApplyFilters(entry);
                           if (window.Shiny && window.Shiny.setInputValue) {
                               const allowedIndices = currentSelections ? Array.from(currentSelections) : null;
                               let allowedNames = null;
@@ -1179,7 +1189,8 @@ HTMLWidgets.widget({
                     const group = document.createElementNS(svgNS, 'g');
                     
                     const myVar = d.var_name;
-                    const mySelections = globalRegistry.categorySelections.get(myVar);
+                    const _eL = globalRegistry.get(plotId);
+                    const mySelections = _eL && _eL.categorySelections && _eL.categorySelections.get(myVar);
                     if (mySelections && !mySelections.has(i)) {
                         group.setAttribute('opacity', '0.3');
                     }
@@ -1252,7 +1263,8 @@ HTMLWidgets.widget({
                  const isCategorical = (xData.legend && xData.legend.var_type === 'categorical');
                  
                  // --- SVG EXPORT FILTERING: INCLUDE SERVER INDICES ---
-                 const activeVarFilters = Array.from(globalRegistry.indexFilters.values());
+                 const _eX = globalRegistry.get(plotId);
+                 const activeVarFilters = (_eX && _eX.indexFilters) ? Array.from(_eX.indexFilters.values()) : [];
                  const hasCatFilters = (activeVarFilters.length > 0);
                  
                  // PREPARE SERVER FILTERS
@@ -1265,8 +1277,9 @@ HTMLWidgets.widget({
                     let keep = true;
 
                     // 1. Strainers (Client Ranges)
-                    if (globalRegistry.activeStrainers) {
-                        const strainers = globalRegistry.activeStrainers;
+                    const _eS = globalRegistry.get(plotId);
+                    if (_eS && _eS.activeStrainers) {
+                        const strainers = _eS.activeStrainers;
                         const keys = Object.keys(strainers);
                         if (keys.length > 0) {
                             const fBuffs = filterBuffers;
@@ -1342,10 +1355,9 @@ HTMLWidgets.widget({
                     globalRegistry.globalSyncEnabled = xData.syncState;
                 }
 
-                if (globalRegistry.n_points !== 0 && globalRegistry.n_points !== xData.n_points) {
-                    globalRegistry.indexFilters.clear();
-                    globalRegistry.categorySelections.clear();
-                }
+                // Filter state is per-plot (stored on each registry entry) and a
+                // fresh entry is created on every render, so there is nothing
+                // global to reset here when the point count changes.
                 globalRegistry.n_points = xData.n_points;
 
                 if (xData.margins) {
@@ -1657,6 +1669,7 @@ HTMLWidgets.widget({
                     options: xData.options, legend: xData.legend, n_points: n,
                     updateLegendUI: updateLegendUI, createLegend: createLegend,
                     isInitializing: true, autoFit: xData.autoFit, serverIndices: xData.init_server_indices,
+                    activeStrainers: {}, indexFilters: new Map(), categorySelections: new Map(),
                     legendBg: xData.legendBg,
                     legendText: xData.legendText,
                     legendAnchor: xData.legendAnchor,
