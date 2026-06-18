@@ -8,17 +8,13 @@
 // ============================================================================
 import * as d3 from 'd3';
 import * as reglScatterplotMod from 'regl-scatterplot';
-import Pickr from '@simonwep/pickr';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import pickrNanoCss from '@simonwep/pickr/dist/themes/nano.min.css';
 
 window.d3 = d3;
 window.__reglScatterplotMod = reglScatterplotMod;
-window.Pickr = Pickr;
 window.html2canvas = html2canvas;
 window.jspdf = { jsPDF };
-window.__reglScatterplotNanoCss = pickrNanoCss;
 
 // ============================================================================
 // reglScatterplot widget
@@ -667,19 +663,14 @@ HTMLWidgets.widget({
                     overflow: hidden; text-overflow: ellipsis;
                 }
                 .sp-legend-item:hover { background-color: rgba(0,0,0,0.03); border-radius: 4px; }
-                .sp-color-swatch { width: 14px; height: 14px; border-radius: 3px; margin-right: 8px; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.2); box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+                .sp-color-swatch { width: 14px; height: 14px; border-radius: 3px; margin-right: 8px; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.2); box-shadow: 0 1px 2px rgba(0,0,0,0.1); padding: 0; -webkit-appearance: none; -moz-appearance: none; appearance: none; background: none; }
+                .sp-color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+                .sp-color-swatch::-webkit-color-swatch { border: none; border-radius: 2px; }
+                .sp-color-swatch::-moz-color-swatch { border: none; border-radius: 2px; }
                 .sp-loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; position: absolute; top: 50%; left: 50%; margin-top: -15px; margin-left: -15px; z-index: 50; display: none; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             `;
             document.head.appendChild(style);
-            // Pickr's theme CSS is bundled locally (see top-of-file import) and
-            // injected as a <style> instead of fetched from a CDN.
-            if (!document.getElementById('sp-pickr-nano-css')) {
-                const pickrStyle = document.createElement('style');
-                pickrStyle.id = 'sp-pickr-nano-css';
-                pickrStyle.textContent = window.__reglScatterplotNanoCss || '';
-                document.head.appendChild(pickrStyle);
-            }
         };
         injectStyles();
 
@@ -947,8 +938,7 @@ HTMLWidgets.widget({
                 if (!Array.isArray(legendData.names)) legendData.names = [legendData.names];
                 if (!Array.isArray(legendData.colors)) legendData.colors = [legendData.colors];
                 totalCategories = legendData.names.length;
-                const Pickr = window.Pickr; // bundled locally
-                
+
                 legendData.names.forEach((name, i) => {
                     const row = document.createElement('div');
                     row.className = 'sp-legend-item';
@@ -960,28 +950,23 @@ HTMLWidgets.widget({
                         row.style.opacity = '0.3';
                     }
                     
-                    const swatch = document.createElement('div');
+                    // Native <input type=color>: the browser positions the OS
+                    // colour picker correctly in every environment (Jupyter,
+                    // VS Code, RStudio, standalone), unlike a JS picker whose
+                    // popup mis-positions inside notebooks' nested/scrolled DOM.
+                    const swatch = document.createElement('input');
+                    swatch.type = 'color';
                     swatch.className = 'sp-color-swatch';
-                    swatch.style.backgroundColor = legendData.colors[i];
-                    swatch.style.width = (fontSize + 2) + 'px'; 
+                    swatch.value = legendData.colors[i];
+                    swatch.title = 'Click to recolour ' + name;
+                    swatch.style.width = (fontSize + 2) + 'px';
                     swatch.style.height = (fontSize + 2) + 'px';
                     row.appendChild(swatch);
-                    
-                    const pickrInst = Pickr.create({
-                        el: swatch, theme: 'nano', default: legendData.colors[i], defaultRepresentation: 'HEX', useAsButton: true,
-                        // Append the picker inside the (position:relative) plot
-                        // container and anchor it beside the swatch. Pickr's
-                        // default body-append lands it mis-positioned (centred)
-                        // inside a Jupyter/anywidget output cell.
-                        container: container, position: 'right-start',
-                        components: { preview: true, opacity: false, hue: true, interaction: { hex: true, rgba: false, input: true, save: true } }
-                    });
-                    
-                    pickrInst.on('save', (color, instance) => {
-                        const newHex = color.toHEXA().toString().substring(0, 7);
-                        legendData.colors[i] = newHex; 
-                        swatch.style.backgroundColor = newHex; 
-                        plot.set({ pointColor: [...legendData.colors] }); 
+
+                    swatch.addEventListener('input', () => {
+                        const newHex = swatch.value.substring(0, 7);
+                        legendData.colors[i] = newHex;
+                        plot.set({ pointColor: [...legendData.colors] });
                         if (window.Shiny && window.Shiny.setInputValue) {
                             window.Shiny.setInputValue('sp_color_change', {
                                 variable: legendData.var_name,
@@ -989,9 +974,8 @@ HTMLWidgets.widget({
                                 color: newHex
                             });
                         }
-                        pickrInst.hide();
                     });
-                    
+                    // Don't let opening the picker toggle the category filter.
                     swatch.addEventListener('click', (e) => e.stopPropagation());
                     
                     const label = document.createElement('span');
