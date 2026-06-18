@@ -12,6 +12,9 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(reglScatterplotR)
+# Dev tip: to preview un-installed local changes without reinstalling each time,
+# replace the line above with (adjust the path):
+#   devtools::load_all("~/Desktop/reglScatterplotR")
 ```
 
 > **How to use this notebook.** Run it chunk-by-chunk in RStudio (each plot
@@ -344,6 +347,21 @@ server. A lasso selection is reported to `input$<plotId>_selected`
 # observeEvent(input$plot_selected, {
 #   sel <- input$plot_selected$indices      # selected row indices
 #   message(length(sel), " cells selected")
+# })
+```
+
+**Annotate from a selection (R counterpart of Python's `w.annotate`).** In a
+Shiny app you can write the lasso selection back onto your object's `colData`:
+
+```{r shiny-annotate, eval=FALSE}
+# rv <- reactiveVal(sce)
+# observeEvent(input$annotate, {                      # e.g. an actionButton
+#   sel <- input$plot_selected$indices
+#   obj <- rv()
+#   lab <- as.character(colData(obj)$manual %||% NA)
+#   lab[sel + 1L] <- input$label                      # +1: JS 0-based -> R 1-based
+#   colData(obj)$manual <- factor(lab)
+#   rv(obj)
 # })
 ```
 
