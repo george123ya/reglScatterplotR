@@ -969,6 +969,11 @@ HTMLWidgets.widget({
                     
                     const pickrInst = Pickr.create({
                         el: swatch, theme: 'nano', default: legendData.colors[i], defaultRepresentation: 'HEX', useAsButton: true,
+                        // Append the picker inside the (position:relative) plot
+                        // container and anchor it beside the swatch. Pickr's
+                        // default body-append lands it mis-positioned (centred)
+                        // inside a Jupyter/anywidget output cell.
+                        container: container, position: 'right-start',
                         components: { preview: true, opacity: false, hue: true, interaction: { hex: true, rgba: false, input: true, save: true } }
                     });
                     
@@ -1364,6 +1369,10 @@ HTMLWidgets.widget({
                     margin = xData.margins;
                 }
                 const fSize = xData.fontSize || 12;
+                // Drive the axis (ticks, domain line, x/y labels) colour from
+                // axisColor; without this it was pinned to the dark default and
+                // the axis text was invisible on dark themes.
+                currentAxisColor = xData.axisColor || '#333333';
 
                 loader.style.display = 'block';
                 if (!Array.isArray(xData.gene_names)) xData.gene_names = [];

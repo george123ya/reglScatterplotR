@@ -29,11 +29,12 @@ function mount(el, model) {
   container.style.width = (typeof w === "number" && w > 0) ? w + "px" : "100%";
   container.style.height = typeof h === "number" ? h + "px" : h || "500px";
   container.style.position = "relative";
-  // Paint the container (incl. the axis margins) with the plot background so a
-  // dark theme has no white border/contour around the canvas.
+  // Paint only the plot container (incl. the axis margins) with the plot
+  // background so a dark theme has no white border around the canvas. NOT the
+  // anywidget `el`, which spans the full cell width - painting that would make a
+  // fixed-width plot look full-width.
   if (spec.backgroundColor) {
     container.style.background = spec.backgroundColor;
-    el.style.background = spec.backgroundColor;
   }
   el.appendChild(container);
 
