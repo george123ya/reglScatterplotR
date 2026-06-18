@@ -110,7 +110,7 @@ Plots sharing a `syncPlots` group link their pan/zoom, lasso selection and
 legend/range filtering. Lay them out with `htmltools` (the R counterpart of
 `reglscatterpy`'s `compose()`).
 
-```{r sync, eval=FALSE}
+```{r sync}
 p1 <- reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
   colorBy = "celltype", plotId = "p1", syncPlots = c("p1", "p2"))
 p2 <- reglScatterplot(reglScatterExample, x = "UMAP_1", y = "UMAP_2",
@@ -122,7 +122,7 @@ htmltools::tagList(htmltools::div(style = "display:flex; gap:8px; height:460px",
 `crosstalk` links the lasso selection + filtering with other widgets (DT,
 plotly, leaflet) — no Shiny needed:
 
-```{r crosstalk, eval=FALSE}
+```{r crosstalk, eval=requireNamespace("crosstalk", quietly = TRUE) && requireNamespace("DT", quietly = TRUE)}
 library(crosstalk)
 sd <- SharedData$new(reglScatterExample)
 bscols(

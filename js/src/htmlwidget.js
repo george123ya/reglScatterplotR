@@ -249,7 +249,7 @@ function propagateFiltersToGroup(src) {
 // there was no UI at all. This builds a small draggable-free panel of dual
 // range sliders that write the same `activeStrainers` and re-run the filter, so
 // `filterBy` is interactive everywhere.
-function createFilterPanel(container, entry, fontSize) {
+function createFilterPanel(container, entry, fontSize, margins) {
     const data = entry && entry.filterData;
     if (!data) return;
     const keys = Object.keys(data);
@@ -266,9 +266,12 @@ function createFilterPanel(container, entry, fontSize) {
     const fam = '-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,Arial,sans-serif';
 
     const accent = '#3b82f6';
+    // Anchor inside the plotting area so the panel clears the axes/labels.
+    const _m = margins || {};
+    const fL = (_m.left || 0) + 10, fB = (_m.bottom || 0) + 10;
     const wrap = document.createElement('div');
     wrap.className = 'sp-filter-wrapper';
-    wrap.style.cssText = 'position:absolute; bottom:10px; left:10px; z-index:998;' +
+    wrap.style.cssText = 'position:absolute; bottom:' + fB + 'px; left:' + fL + 'px; z-index:998;' +
         'background:' + frostedBg + '; color:' + txt + '; border:1px solid ' + border + ';' + blurCss +
         'border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,0.28); font-size:' + fontSize + 'px;' +
         'width:230px; max-height:min(92%,440px); overflow-y:auto; font-family:' + fam + ';';
@@ -388,7 +391,7 @@ function createFilterPanel(container, entry, fontSize) {
 
         // Brush directly over the density: a shaded selected region + two
         // draggable vertical handles spanning the histogram (no separate track).
-        area.style.height = (HH + 9) + 'px';
+        area.style.height = HH + 'px';
         const shade = document.createElement('div');
         shade.style.cssText = 'position:absolute; top:0; height:' + HH + 'px; pointer-events:none; ' +
             'background:' + accent + '; opacity:0.10;';
@@ -396,13 +399,13 @@ function createFilterPanel(container, entry, fontSize) {
 
         const mkHandle = () => {
             const h = document.createElement('div');
-            h.style.cssText = 'position:absolute; top:0; width:11px; height:' + (HH + 9) +
-                'px; margin-left:-5.5px; cursor:ew-resize; touch-action:none; z-index:2;';
+            // A clean vertical bar spanning the histogram - no bottom knob. The
+            // 12px hit area is wider than the visible 5px bar for easy grabbing.
+            h.style.cssText = 'position:absolute; top:0; width:12px; height:' + HH +
+                'px; margin-left:-6px; cursor:ew-resize; touch-action:none; z-index:2;';
             h.innerHTML =
-                '<div style="position:absolute; left:4px; top:0; width:3px; height:' + HH + 'px; ' +
-                'background:' + accent + '; border-radius:2px;"></div>' +
-                '<div style="position:absolute; left:0; bottom:0; width:11px; height:9px; ' +
-                'border-radius:0 0 3px 3px; background:' + accent + '; box-shadow:0 1px 2px rgba(0,0,0,0.3);"></div>';
+                '<div style="position:absolute; left:3.5px; top:0; width:5px; height:' + HH + 'px; ' +
+                'background:' + accent + '; border-radius:3px; box-shadow:0 0 0 1px rgba(0,0,0,0.15);"></div>';
             area.appendChild(h); return h;
         };
         const hLo = mkHandle(), hHi = mkHandle();
@@ -853,21 +856,27 @@ HTMLWidgets.widget({
                 legendWrapper.style.bottom = 'auto';
                 legendWrapper.style.left = 'auto';
                 legendWrapper.style.right = 'auto';
+                // Anchor INSIDE the plotting area: offset by the axis margins
+                // (+pad) so the legend doesn't sit on top of the axes/labels.
+                // With showAxes=FALSE the margins are ~0, so it hugs the edge.
+                const pad = 10;
+                const offL = (margin.left || 0) + pad, offR = (margin.right || 0) + pad;
+                const offT = (margin.top || 0) + pad, offB = (margin.bottom || 0) + pad;
                 if (anc === 'custom') {
-                    legendWrapper.style.left = (entry.legendAnchor.x || 10) + 'px';
-                    legendWrapper.style.top  = (entry.legendAnchor.y || 10) + 'px';
+                    legendWrapper.style.left = (entry.legendAnchor.x || offL) + 'px';
+                    legendWrapper.style.top  = (entry.legendAnchor.y || offT) + 'px';
                 } else if (anc === 'top-left') {
-                    legendWrapper.style.top = '10px';
-                    legendWrapper.style.left = '10px';
+                    legendWrapper.style.top = offT + 'px';
+                    legendWrapper.style.left = offL + 'px';
                 } else if (anc === 'bottom-right') {
-                    legendWrapper.style.bottom = '10px';
-                    legendWrapper.style.right  = '10px';
+                    legendWrapper.style.bottom = offB + 'px';
+                    legendWrapper.style.right  = offR + 'px';
                 } else if (anc === 'bottom-left') {
-                    legendWrapper.style.bottom = '10px';
-                    legendWrapper.style.left   = '10px';
+                    legendWrapper.style.bottom = offB + 'px';
+                    legendWrapper.style.left   = offL + 'px';
                 } else {
-                    legendWrapper.style.top   = '10px';
-                    legendWrapper.style.right = '10px';
+                    legendWrapper.style.top   = offT + 'px';
+                    legendWrapper.style.right = offR + 'px';
                 }
 
                 // 1. Define crisp SVG icons
@@ -1167,28 +1176,43 @@ HTMLWidgets.widget({
 
         const createDownloadButton = function(container) {
             const entry = globalRegistry.get(plotId);
-            const bg = entry.legendBg || 'var(--bg-card, #ffffff)';
-            const txt = entry.legendText || 'var(--text-sub, #64748b)';
-            const border = (txt.includes('#333') || txt === '#333') ? 'var(--border-color, #ccc)' : 'var(--border-color, #475569)';
+            // SP_PANEL: frosted-card look matching the legend / filter / toolbar
+            // family (semi-transparent legendBg + blur + the shared border),
+            // instead of a solid white chip that looks foreign to the legend.
+            const baseBg = entry.legendBg || '#ffffff';
+            const txt = entry.legendText || '#222222';
+            const legOpacity = (typeof entry.legendOpacity === 'number') ? entry.legendOpacity : 0.55;
+            const legBlur = (typeof entry.legendBlur === 'number') ? entry.legendBlur : 10;
+            const bg = hexToRgba(baseBg, legOpacity);
+            const border = 'rgba(127,127,127,0.30)';
+            const blur = legBlur > 0 ? 'blur(' + legBlur + 'px) saturate(120%)' : 'none';
 
             let wrapper = container.querySelector('.dl-btn-container');
-            
+
             if (!wrapper) {
                 wrapper = document.createElement('div');
                 wrapper.className = 'dl-btn-container';
-                // CHANGED: Increased 'right' to 50px so it clears the scrollbar/edge
-                wrapper.style.cssText = `position: absolute; top: 10px; left: 10px; z-index: 90;`;                
+                // Bottom-right: the one free corner in the default layout
+                // (toolbar top-left, legend top-right, filter bottom-left), so
+                // the download chip + menu never overlap the other panels.
+                // Offset by the axis margins so it clears the axes/labels.
+                const dlB = (margin.bottom || 0) + 10, dlR = (margin.right || 0) + 10;
+                wrapper.style.cssText = `position: absolute; bottom: ${dlB}px; right: ${dlR}px; z-index: 90;`;
                 const btn = document.createElement('div');
                 btn.className = 'sp-download-btn';
                 btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
-                
+
                 const menu = document.createElement('div');
                 menu.className = 'sp-menu';
 
-                // Ensure menu aligns with the left side of the button
-                menu.style.left = '0'; 
-                menu.style.right = 'auto';
-                
+                // Anchored bottom-right, the menu opens UPWARD off the button.
+                menu.style.right = '0';
+                menu.style.left = 'auto';
+                menu.style.top = 'auto';
+                menu.style.bottom = '100%';
+                menu.style.marginTop = '0';
+                menu.style.marginBottom = '4px';
+
                 ['PNG', 'SVG', 'PDF'].forEach(format => {
                     const item = document.createElement('div');
                     item.className = 'sp-menu-item';
@@ -1213,10 +1237,14 @@ HTMLWidgets.widget({
                 btn.style.background = bg;
                 btn.style.color = txt;
                 btn.style.borderColor = border;
+                btn.style.backdropFilter = blur;
+                btn.style.webkitBackdropFilter = blur;
             }
             if (menu) {
                 menu.style.background = bg;
                 menu.style.borderColor = border;
+                menu.style.backdropFilter = blur;
+                menu.style.webkitBackdropFilter = blur;
                 const items = menu.querySelectorAll('.sp-menu-item');
                 items.forEach(item => item.style.color = txt);
             }
@@ -2015,7 +2043,7 @@ HTMLWidgets.widget({
                 // own UI via the update_filter_range message handler.
                 if (xData.filter_data && Object.keys(xData.filter_data).length &&
                     typeof Shiny === 'undefined') {
-                    createFilterPanel(container, globalRegistry.get(plotId), xData.legendFontSize || 12);
+                    createFilterPanel(container, globalRegistry.get(plotId), xData.legendFontSize || 12, margin);
                 }
 
                 // Toolbar: pan / lasso / zoom-to-selection / reset / screenshot.
@@ -2032,6 +2060,10 @@ HTMLWidgets.widget({
                     };
                     const tb = document.createElement('div');
                     tb.className = 'sp-toolbar' + (tbPos === 'top' ? ' sp-toolbar-h' : '');
+                    // Default anchor INSIDE the plotting area (offset by the axis
+                    // margins) so the toolbar doesn't sit over the axes/labels.
+                    tb.style.top = ((margin.top || 0) + 10) + 'px';
+                    tb.style.left = ((margin.left || 0) + 10) + 'px';
                     // SP_PANEL: match the legend/filter frosted card (bg from
                     // legendBg, icons in legendText) so the panels are a family.
                     const tbBg = xData.legendBg || '#ffffff';
