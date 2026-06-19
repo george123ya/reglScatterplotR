@@ -12,6 +12,11 @@ rendering **millions of two-dimensional points** in the browser via WebGL.
 Built for exploratory visualisation of single-cell, spatial transcriptomics
 and other high-dimensional biological data.
 
+<p align="center">
+  <img src="man/figures/demo.gif"
+       alt="Panning, lassoing and legend-filtering an interactive UMAP" width="760">
+</p>
+
 > **Python?** A companion package,
 > [**reglscatterpy**](https://github.com/george123ya/reglscatterpy), drives the
 > same compiled widget from Python (AnnData / MuData / SpatialData) in Jupyter,
@@ -114,6 +119,14 @@ reglScatterplot(ad, x = "umap", colorBy = "leiden")  # obs column or a gene
 
 # (AnnData read with zellkonverter::readH5AD() is an SCE - use x = "UMAP")
 ```
+
+## Gallery
+
+| Categorical colouring | Continuous (gene) colouring |
+|---|---|
+| ![Categorical UMAP with frosted legend](man/figures/umap-categorical.png) | ![Gene-expression UMAP with colour bar](man/figures/umap-continuous.png) |
+| **`filterBy` distribution sliders** | **Synced plots (`syncPlots`)** |
+| ![Range-filter sliders with histograms](man/figures/filter-sliders.png) | ![Two embeddings with linked pan/zoom](man/figures/linked-grid.png) |
 
 ## Documentation
 
