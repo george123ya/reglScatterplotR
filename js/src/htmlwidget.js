@@ -98,6 +98,30 @@ const decodeBase64 = (base64Str) => {
     return new Float32Array(base64Str);
 };
 
+// Decode a channel that arrived as RAW BINARY (a DataView/ArrayBuffer from a
+// Jupyter comm buffer — the experimental fast path), applying the channel's
+// known transform. mode: 'u16' (x/y bipolar), 'u16u' (continuous 0..1),
+// 'u16i' (integer codes), 'f32' (raw float32).
+const decodeBinary = (view, mode) => {
+    if (!view) return null;
+    const buf = view.buffer || view;
+    const off = view.byteOffset || 0;
+    const byteLen = (view.byteLength != null) ? view.byteLength : buf.byteLength;
+    if (mode === 'f32') return new Float32Array(buf, off, byteLen / 4);
+    const u16 = new Uint16Array(buf, off, byteLen / 2);
+    const out = new Float32Array(u16.length);
+    if (mode === 'u16') { const inv = 1 / 32767.5; for (let i = 0; i < u16.length; i++) out[i] = u16[i] * inv - 1; }
+    else if (mode === 'u16u') { const inv = 1 / 65535; for (let i = 0; i < u16.length; i++) out[i] = u16[i] * inv; }
+    else { for (let i = 0; i < u16.length; i++) out[i] = u16[i]; }   // u16i
+    return out;
+};
+
+// Pick base64-string vs binary decode for a channel.
+const decodeChannel = (v, mode) => {
+    if (v == null) return null;
+    return (typeof v === 'string') ? decodeBase64(v) : decodeBinary(v, mode);
+};
+
 // Convert a #rrggbb (or shorthand/already-rgba) colour to an rgba() string at
 // the given alpha. Used for the frosted-glass legend background.
 function hexToRgba(hex, alpha) {
@@ -1606,10 +1630,17 @@ HTMLWidgets.widget({
                 if (!initialView && existingEntry && existingEntry.savedCameraView) initialView = existingEntry.savedCameraView;
 
                 const n = xData.n_points;
-                dataBuffers.x = decodeBase64(xData.x);
-                dataBuffers.y = decodeBase64(xData.y);
-                dataBuffers.z = decodeBase64(xData.z);
-                dataBuffers.w = xData.w ? decodeBase64(xData.w) : null; // size/opacity encoding channel
+                // Channels may arrive as base64 strings (default) OR, in the
+                // experimental fast path, as raw binary (DataView from a comm
+                // buffer). decodeChannel picks the right path by the channel's
+                // known transform.
+                const _zmode = (xData.legend && xData.legend.var_type === 'categorical')
+                    ? 'u16i'
+                    : ((xData.legend && xData.legend.var_type === 'continuous') ? 'u16u' : 'f32');
+                dataBuffers.x = decodeChannel(xData.x, 'u16');
+                dataBuffers.y = decodeChannel(xData.y, 'u16');
+                dataBuffers.z = decodeChannel(xData.z, _zmode);
+                dataBuffers.w = xData.w ? decodeChannel(xData.w, 'u16u') : null; // size/opacity channel
 
                 filterBuffers = {};
                 if (xData.filter_data) {
