@@ -1805,8 +1805,31 @@ HTMLWidgets.widget({
                         try { plot.set({ cameraIsFixed: v }); } catch (err) {}
                     };
                     container.addEventListener('wheel', (e) => {
-                        setFixed(!(e.ctrlKey || e.metaKey));
-                    }, { capture: true });
+                        const zoom = e.ctrlKey || e.metaKey;
+                        setFixed(!zoom);            // plain -> fixed (no zoom); ctrl -> zoom
+                        if (zoom) return;
+                        // Live widget: the camera being fixed means regl doesn't
+                        // preventDefault, so the notebook scrolls natively. The STATIC
+                        // render is an <iframe> that LATCHES a wheel gesture started on
+                        // it, so forward the scroll to the notebook's scroll container.
+                        let fe = null; try { fe = window.frameElement; } catch (err) {}
+                        if (!fe) return;
+                        let pdoc; try { pdoc = window.parent.document; } catch (err) { return; }
+                        let dy = e.deltaY;
+                        if (e.deltaMode === 1) dy *= 16;
+                        else if (e.deltaMode === 2) dy *= (container.clientHeight || 400);
+                        let n = fe.parentElement, target = null;
+                        while (n && n.nodeType === 1) {
+                            const oy = getComputedStyle(n).overflowY;
+                            if ((oy === 'auto' || oy === 'scroll' || oy === 'overlay') &&
+                                n.scrollHeight > n.clientHeight + 1) { target = n; break; }
+                            n = n.parentElement;
+                        }
+                        if (!target) target = pdoc.querySelector(
+                            '.jp-WindowedPanel-outer, .jp-Notebook, .jp-NotebookPanel-notebook');
+                        if (!target) target = pdoc.scrollingElement || pdoc.documentElement;
+                        if (target) { e.preventDefault(); target.scrollTop += dy; }
+                    }, { capture: true, passive: false });
                     container.addEventListener('mousedown', () => setFixed(false), { capture: true });
                 }
 
