@@ -1797,8 +1797,27 @@ HTMLWidgets.widget({
                 if (container && !container.__rsWheel) {
                     container.__rsWheel = true;
                     container.addEventListener('wheel', (e) => {
-                        if (!(e.ctrlKey || e.metaKey)) e.stopPropagation();
-                    }, { capture: true, passive: true });
+                        if (e.ctrlKey || e.metaKey) return;   // modifier -> let regl zoom
+                        e.stopPropagation();                   // plain wheel -> never zoom
+                        // In the live widget the notebook scrolls natively. In the
+                        // STATIC render the plot is an <iframe> that traps the wheel,
+                        // so forward the scroll to the notebook's scroll container
+                        // (the srcdoc is same-origin, so we can reach the parent).
+                        let fe = null;
+                        try { fe = window.frameElement; } catch (err) { return; }
+                        if (!fe) return;
+                        e.preventDefault();
+                        let node = fe.parentElement;
+                        while (node) {
+                            const oy = getComputedStyle(node).overflowY;
+                            if ((oy === 'auto' || oy === 'scroll') &&
+                                node.scrollHeight > node.clientHeight) {
+                                node.scrollTop += e.deltaY; return;
+                            }
+                            node = node.parentElement;
+                        }
+                        try { window.parent.scrollBy(0, e.deltaY); } catch (err) {}
+                    }, { capture: true, passive: false });
                 }
 
                 // Plot title. The `title` argument was previously only drawn
