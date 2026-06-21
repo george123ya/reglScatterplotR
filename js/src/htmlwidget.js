@@ -266,7 +266,7 @@ function createFilterPanel(container, entry, fontSize, margins) {
     const fam = '-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,Arial,sans-serif';
 
     const accent = '#3b82f6';        // density / selected-band tint
-    const grabCol = '#f59e0b';       // grabber handles — a distinct colour
+    const grabCol = '#000000';       // grabber handles — black bars (white ring for contrast)
     // Live-filter while dragging unless the dataset is large (then on release).
     const liveFilter = (entry.n_points || 0) <= 150000;
     // Anchor inside the plotting area so the panel clears the axes/labels.
@@ -1711,10 +1711,17 @@ HTMLWidgets.widget({
                 // page. Browsers cap live WebGL contexts (~16); a new context per
                 // plot/cell exhausts them and triggers context-loss ("GPU Error").
                 // regl-scatterplot supports a shared renderer for exactly this.
-                if (!window.__reglSharedRenderer) {
-                    window.__reglSharedRenderer = reglMod.createRenderer({ pixelRatio: dpr });
+                if (xData.pixelRatio != null) {
+                    // An explicit pixelRatio gets its OWN renderer so the override
+                    // actually applies — the shared renderer's pixelRatio is fixed
+                    // at first creation, so reusing it would ignore the setting.
+                    renderer = reglMod.createRenderer({ pixelRatio: dpr });
+                } else {
+                    if (!window.__reglSharedRenderer) {
+                        window.__reglSharedRenderer = reglMod.createRenderer({ pixelRatio: dpr });
+                    }
+                    renderer = window.__reglSharedRenderer;
                 }
-                renderer = window.__reglSharedRenderer;
                 const intXScale = d3.scaleLinear().domain([-1,1]).range([0,cW]);
                 const intYScale = d3.scaleLinear().domain([-1,1]).range([cH,0]);
                 let initialAspectRatio = null;
