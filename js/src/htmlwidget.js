@@ -1790,43 +1790,24 @@ HTMLWidgets.widget({
                         resetView();
                     });
                 }
-                // Plain mouse-wheel scrolls the page (so it doesn't hijack
-                // notebook scrolling); hold Ctrl/Cmd to zoom the plot. Captured
-                // on the container so it runs before regl-scatterplot's own
-                // wheel-zoom handler on the canvas.
+                // Plain mouse-wheel should scroll the notebook, not zoom the plot;
+                // hold Ctrl/Cmd to zoom. Rather than fight the page for the wheel
+                // event (stopPropagation also blocks JupyterLab's own scroll), we
+                // toggle regl-scatterplot's `cameraIsFixed`: when fixed it doesn't
+                // preventDefault on wheel, so the browser scrolls natively. We
+                // un-fix for Ctrl/Cmd (zoom) and on mousedown (so drag still pans).
                 if (container && !container.__rsWheel) {
                     container.__rsWheel = true;
-                    // Plain wheel must scroll the notebook, not zoom the plot. We
-                    // stopPropagation to block regl's wheel-zoom, but that ALSO blocks
-                    // JupyterLab 4's own (JS-driven, windowed) scroll handler — so we
-                    // scroll the nearest scrollable ancestor OURSELVES, crossing into
-                    // the parent document when the plot is rendered in an <iframe>.
-                    const scrollAncestor = (start, dy) => {
-                        let n = start;
-                        while (n && n.nodeType === 1) {
-                            const oy = getComputedStyle(n).overflowY;
-                            if ((oy === 'auto' || oy === 'scroll') &&
-                                n.scrollHeight > n.clientHeight + 1) {
-                                n.scrollTop += dy; return true;
-                            }
-                            n = n.parentElement;
-                        }
-                        return false;
+                    let curFixed = false;
+                    const setFixed = (v) => {
+                        if (v === curFixed || !plot) return;
+                        curFixed = v;
+                        try { plot.set({ cameraIsFixed: v }); } catch (err) {}
                     };
                     container.addEventListener('wheel', (e) => {
-                        if (e.ctrlKey || e.metaKey) return;   // modifier -> let regl zoom
-                        e.stopPropagation();
-                        e.preventDefault();
-                        let dy = e.deltaY;
-                        if (e.deltaMode === 1) dy *= 16;                  // lines -> px
-                        else if (e.deltaMode === 2) dy *= container.clientHeight; // pages
-                        if (scrollAncestor(container.parentElement, dy)) return;
-                        try {
-                            const fe = window.frameElement;               // static iframe render
-                            if (fe && scrollAncestor(fe.parentElement, dy)) return;
-                            (fe ? window.parent : window).scrollBy(0, dy);
-                        } catch (err) {}
-                    }, { capture: true, passive: false });
+                        setFixed(!(e.ctrlKey || e.metaKey));
+                    }, { capture: true });
+                    container.addEventListener('mousedown', () => setFixed(false), { capture: true });
                 }
 
                 // Plot title. The `title` argument was previously only drawn
