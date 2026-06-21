@@ -1722,6 +1722,26 @@ HTMLWidgets.widget({
                 
                 loader.style.display = 'none';
 
+                // --- interaction niceties (added once) --------------------
+                // Double-click resets the view to the full data extent.
+                if (canvas && !canvas.__rsDbl) {
+                    canvas.__rsDbl = true;
+                    canvas.addEventListener('dblclick', (e) => {
+                        e.preventDefault();
+                        try { plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true }); } catch (err) {}
+                    });
+                }
+                // Plain mouse-wheel scrolls the page (so it doesn't hijack
+                // notebook scrolling); hold Ctrl/Cmd to zoom the plot. Captured
+                // on the container so it runs before regl-scatterplot's own
+                // wheel-zoom handler on the canvas.
+                if (container && !container.__rsWheel) {
+                    container.__rsWheel = true;
+                    container.addEventListener('wheel', (e) => {
+                        if (!(e.ctrlKey || e.metaKey)) e.stopPropagation();
+                    }, { capture: true, passive: true });
+                }
+
                 // Plot title. The `title` argument was previously only drawn
                 // into PNG/SVG exports, never shown on screen - render it as a
                 // centred overlay at the top of the plot.
