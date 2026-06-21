@@ -265,7 +265,10 @@ function createFilterPanel(container, entry, fontSize, margins) {
     const blurCss = legBlur > 0 ? 'backdrop-filter:blur(' + legBlur + 'px) saturate(120%); -webkit-backdrop-filter:blur(' + legBlur + 'px) saturate(120%);' : '';
     const fam = '-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,Arial,sans-serif';
 
-    const accent = '#3b82f6';
+    const accent = '#3b82f6';        // density / selected-band tint
+    const grabCol = '#f59e0b';       // grabber handles — a distinct colour
+    // Live-filter while dragging unless the dataset is large (then on release).
+    const liveFilter = (entry.n_points || 0) <= 150000;
     // Anchor inside the plotting area so the panel clears the axes/labels.
     const _m = margins || {};
     const fL = (_m.left || 0) + 10, fB = (_m.bottom || 0) + 10;
@@ -393,8 +396,9 @@ function createFilterPanel(container, entry, fontSize, margins) {
         // draggable vertical handles spanning the histogram (no separate track).
         area.style.height = HH + 'px';
         const shade = document.createElement('div');
-        shade.style.cssText = 'position:absolute; top:0; height:' + HH + 'px; pointer-events:none; ' +
-            'background:' + accent + '; opacity:0.10;';
+        // The selected band is draggable (pan the whole range) — cursor:grab.
+        shade.style.cssText = 'position:absolute; top:0; height:' + HH + 'px; ' +
+            'background:' + accent + '; opacity:0.12; cursor:grab; touch-action:none; z-index:1;';
         area.appendChild(shade);
 
         const mkHandle = () => {
@@ -402,10 +406,10 @@ function createFilterPanel(container, entry, fontSize, margins) {
             // A clean vertical bar spanning the histogram - no bottom knob. The
             // 12px hit area is wider than the visible 5px bar for easy grabbing.
             h.style.cssText = 'position:absolute; top:0; width:12px; height:' + HH +
-                'px; margin-left:-6px; cursor:ew-resize; touch-action:none; z-index:2;';
+                'px; margin-left:-6px; cursor:ew-resize; touch-action:none; z-index:3;';
             h.innerHTML =
                 '<div style="position:absolute; left:3.5px; top:0; width:5px; height:' + HH + 'px; ' +
-                'background:' + accent + '; border-radius:3px; box-shadow:0 0 0 1px rgba(0,0,0,0.15);"></div>';
+                'background:' + grabCol + '; border-radius:3px; box-shadow:0 0 0 1px #fff, 0 0 0 2px rgba(0,0,0,0.25);"></div>';
             area.appendChild(h); return h;
         };
         const hLo = mkHandle(), hHi = mkHandle();
@@ -445,6 +449,7 @@ function createFilterPanel(container, entry, fontSize, margins) {
                 if (which === 'lo') curLo = Math.min(v, curHi);
                 else curHi = Math.max(v, curLo);
                 redraw();
+                if (liveFilter) apply();
             };
             const up = () => {
                 document.removeEventListener('mousemove', move);
@@ -462,6 +467,37 @@ function createFilterPanel(container, entry, fontSize, margins) {
         hHi.addEventListener('mousedown', startDrag('hi'));
         hLo.addEventListener('touchstart', startDrag('lo'), { passive: false });
         hHi.addEventListener('touchstart', startDrag('hi'), { passive: false });
+
+        // Pan the selected band: drag the shaded region to move the whole range.
+        const startBand = (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            const rect = area.getBoundingClientRect();
+            const startX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+            const w = curHi - curLo, sLo = curLo;
+            shade.style.cursor = 'grabbing';
+            const move = (e) => {
+                const px = e.touches ? e.touches[0].clientX : e.clientX;
+                let nLo = sLo + ((px - startX) / rect.width) * span;
+                nLo = Math.max(lo, Math.min(nLo, hi - w));
+                curLo = nLo; curHi = nLo + w;
+                redraw();
+                if (liveFilter) apply();
+            };
+            const up = () => {
+                document.removeEventListener('mousemove', move);
+                document.removeEventListener('mouseup', up);
+                document.removeEventListener('touchmove', move);
+                document.removeEventListener('touchend', up);
+                shade.style.cursor = 'grab';
+                apply();
+            };
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', up);
+            document.addEventListener('touchmove', move, { passive: false });
+            document.addEventListener('touchend', up);
+        };
+        shade.addEventListener('mousedown', startBand);
+        shade.addEventListener('touchstart', startBand, { passive: false });
     });
 
     container.appendChild(wrap);
@@ -1723,12 +1759,23 @@ HTMLWidgets.widget({
                 loader.style.display = 'none';
 
                 // --- interaction niceties (added once) --------------------
+                // Reset to the exact view the plot first had (not a guessed area).
+                const resetView = () => {
+                    try {
+                        const ent = globalRegistry.get(plotId);
+                        if (ent && ent.initialCameraView) {
+                            plot.set({ cameraView: cloneCamera(ent.initialCameraView) });
+                        } else {
+                            plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true });
+                        }
+                    } catch (err) {}
+                };
                 // Double-click resets the view to the full data extent.
                 if (canvas && !canvas.__rsDbl) {
                     canvas.__rsDbl = true;
                     canvas.addEventListener('dblclick', (e) => {
                         e.preventDefault();
-                        try { plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true }); } catch (err) {}
+                        resetView();
                     });
                 }
                 // Plain mouse-wheel scrolls the page (so it doesn't hijack
@@ -2110,9 +2157,7 @@ HTMLWidgets.widget({
                     const panBtn = mk('Pan / zoom', TB.pan, (b) => setMode('panZoom', b));
                     mk('Lasso select', TB.lasso, (b) => setMode('lasso', b));
                     mk('Zoom to selection', TB.zoom, () => zoomToSelection());
-                    mk('Reset view', TB.reset, () => {
-                        try { plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true }); } catch (err) {}
-                    });
+                    mk('Reset view', TB.reset, () => resetView());
                     mk('Screenshot (PNG)', TB.cam, () => downloadPlot('png'));
                     panBtn.classList.add('on'); panBtn.style.color = '#fff';
 
