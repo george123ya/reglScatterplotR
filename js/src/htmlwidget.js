@@ -1796,27 +1796,36 @@ HTMLWidgets.widget({
                 // wheel-zoom handler on the canvas.
                 if (container && !container.__rsWheel) {
                     container.__rsWheel = true;
+                    // Plain wheel must scroll the notebook, not zoom the plot. We
+                    // stopPropagation to block regl's wheel-zoom, but that ALSO blocks
+                    // JupyterLab 4's own (JS-driven, windowed) scroll handler — so we
+                    // scroll the nearest scrollable ancestor OURSELVES, crossing into
+                    // the parent document when the plot is rendered in an <iframe>.
+                    const scrollAncestor = (start, dy) => {
+                        let n = start;
+                        while (n && n.nodeType === 1) {
+                            const oy = getComputedStyle(n).overflowY;
+                            if ((oy === 'auto' || oy === 'scroll') &&
+                                n.scrollHeight > n.clientHeight + 1) {
+                                n.scrollTop += dy; return true;
+                            }
+                            n = n.parentElement;
+                        }
+                        return false;
+                    };
                     container.addEventListener('wheel', (e) => {
                         if (e.ctrlKey || e.metaKey) return;   // modifier -> let regl zoom
-                        e.stopPropagation();                   // plain wheel -> never zoom
-                        // In the live widget the notebook scrolls natively. In the
-                        // STATIC render the plot is an <iframe> that traps the wheel,
-                        // so forward the scroll to the notebook's scroll container
-                        // (the srcdoc is same-origin, so we can reach the parent).
-                        let fe = null;
-                        try { fe = window.frameElement; } catch (err) { return; }
-                        if (!fe) return;
+                        e.stopPropagation();
                         e.preventDefault();
-                        let node = fe.parentElement;
-                        while (node) {
-                            const oy = getComputedStyle(node).overflowY;
-                            if ((oy === 'auto' || oy === 'scroll') &&
-                                node.scrollHeight > node.clientHeight) {
-                                node.scrollTop += e.deltaY; return;
-                            }
-                            node = node.parentElement;
-                        }
-                        try { window.parent.scrollBy(0, e.deltaY); } catch (err) {}
+                        let dy = e.deltaY;
+                        if (e.deltaMode === 1) dy *= 16;                  // lines -> px
+                        else if (e.deltaMode === 2) dy *= container.clientHeight; // pages
+                        if (scrollAncestor(container.parentElement, dy)) return;
+                        try {
+                            const fe = window.frameElement;               // static iframe render
+                            if (fe && scrollAncestor(fe.parentElement, dy)) return;
+                            (fe ? window.parent : window).scrollBy(0, dy);
+                        } catch (err) {}
                     }, { capture: true, passive: false });
                 }
 
