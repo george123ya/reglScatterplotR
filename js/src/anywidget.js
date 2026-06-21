@@ -30,6 +30,7 @@ function mount(el, model) {
   container.style.width = fixedW ? w + "px" : "100%";
   container.style.height = typeof h === "number" ? h + "px" : h || "500px";
   container.style.position = "relative";
+  container.style.boxSizing = "border-box";   // keep the border inside the width (no overflow/scrollbars)
   // Render as a clean, self-contained card (like the static iframe) so the live
   // widget doesn't sprawl across the light, full-width ipywidget output area in
   // dark themes. White plot background + a subtle border/rounding.

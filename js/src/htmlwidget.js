@@ -814,12 +814,16 @@ HTMLWidgets.widget({
 
         canvas.addEventListener('webglcontextrestored', () => {
             console.warn('[SP] webglcontextrestored', plotId);
-            // Strategy: destroy and recreate plot on next render/resize
+            // The browser reclaimed this WebGL context (e.g. too many plots open)
+            // and has now restored it — rebuild the plot so it isn't left blank.
             try { plot?.destroy(); } catch(e) {}
             plot = null;
+            try { delete window.__reglSharedRenderer; } catch(e) { window.__reglSharedRenderer = null; }
+            if (lastXData) { try { instance.renderValue(lastXData); } catch(e) {} }
         }, false);
 
         let plot, renderer, svg, xAxisG, yAxisG, xAxis, yAxis, xScale, yScale;
+        let lastXData = null;   // last spec, for re-rendering after context loss
         let xDomainOrig, yDomainOrig, tooltip, titleDiv;
         let d3Available = false;
         let dataBuffers = { x: null, y: null, z: null, w: null };
@@ -1547,6 +1551,7 @@ HTMLWidgets.widget({
 
         const instance = {
             renderValue: async function(xData) {
+                lastXData = xData;   // remembered so we can re-render after a WebGL context loss
                 if (typeof xData.syncState !== 'undefined') {
                     globalRegistry.globalSyncEnabled = xData.syncState;
                 }
