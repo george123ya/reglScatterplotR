@@ -26,15 +26,20 @@ function mount(el, model) {
 
   const container = document.createElement("div");
   // A positive width => fixed px (like matplotlib / plotly); 0 / null => 100%.
-  container.style.width = (typeof w === "number" && w > 0) ? w + "px" : "100%";
+  const fixedW = (typeof w === "number" && w > 0);
+  container.style.width = fixedW ? w + "px" : "100%";
   container.style.height = typeof h === "number" ? h + "px" : h || "500px";
   container.style.position = "relative";
-  // Paint only the plot container (incl. the axis margins) with the plot
-  // background so a dark theme has no white border around the canvas. NOT the
-  // anywidget `el`, which spans the full cell width - painting that would make a
-  // fixed-width plot look full-width.
-  if (spec.backgroundColor) {
-    container.style.background = spec.backgroundColor;
+  // Render as a clean, self-contained card (like the static iframe) so the live
+  // widget doesn't sprawl across the light, full-width ipywidget output area in
+  // dark themes. White plot background + a subtle border/rounding.
+  container.style.background = spec.backgroundColor || "#ffffff";
+  container.style.border = "1px solid rgba(127,127,127,0.25)";
+  container.style.borderRadius = "6px";
+  // Hug the plot width so the widget's output box doesn't span the full cell.
+  if (fixedW) {
+    el.style.maxWidth = w + "px";
+    el.style.width = "fit-content";
   }
   el.appendChild(container);
 
