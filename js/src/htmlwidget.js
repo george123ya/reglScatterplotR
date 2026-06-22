@@ -2015,6 +2015,13 @@ HTMLWidgets.widget({
                         } else {
                             plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true });
                         }
+                        // compose: mirror the reset camera to the linked panels (a
+                        // programmatic camera set doesn't fire the sync 'view' event).
+                        try {
+                            if (ent && ent.syncGroup && globalRegistry.globalSyncEnabled) {
+                                syncCameraAcrossPlots(plotId);
+                            }
+                        } catch (e) {}
                         // detail-on-zoom: redraw the cached overview RIGHT NOW (robust —
                         // a programmatic reset may not emit a 'view' event, and the
                         // emit->kernel->snap-back chain can race; without this only the
