@@ -91,36 +91,20 @@ function mount(el, model) {
     inst.setSelection(initSel);
   }
 
-  const teardown = () => {
+  return () => {
     ro.disconnect();
     container.removeEventListener("sp-selection", onSel);
     container.removeEventListener("sp-viewport", onViewport);
     model.off("change:_selection", onModelSel);
     container.remove();
   };
-  teardown.inst = inst;   // so onChange can re-render in place (no blank/spinner)
-  return teardown;
 }
 
 export default {
   render({ model, el }) {
     let cleanup = mount(el, model);
-    // Re-render when Python pushes a new spec (e.g. plot.update(...) or a
-    // detail-on-zoom viewport refresh). Update IN PLACE via the instance's own
-    // renderValue (destroys+recreates only the plot, same container) — a full
-    // re-mount blanks `el`, and JupyterLab then flashes its loading spinner on
-    // every zoom. Fall back to a re-mount only if the in-place path throws.
+    // Re-render when Python pushes a new spec (e.g. plot.update(...)).
     const onChange = () => {
-      const inst = cleanup && cleanup.inst;
-      if (inst && typeof inst.renderValue === "function") {
-        Promise.resolve(inst.renderValue(model.get("_spec") || {})).catch((e) => {
-          console.error("[reglScatterplot] in-place re-render failed; re-mounting", e);
-          if (cleanup) cleanup();
-          el.innerHTML = "";
-          cleanup = mount(el, model);
-        });
-        return;
-      }
       if (cleanup) cleanup();
       el.innerHTML = "";
       cleanup = mount(el, model);
