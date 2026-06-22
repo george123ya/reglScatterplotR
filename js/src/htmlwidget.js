@@ -856,6 +856,7 @@ HTMLWidgets.widget({
         let xDomainOrig, yDomainOrig, tooltip, titleDiv, captionDiv;
         let d3Available = false;
         let dataBuffers = { x: null, y: null, z: null, w: null };
+        let tooltipFields = [];   // hoisted so updateData() can refresh hover fields on a viewport swap
         let legendDiv = null;
         let isInitialRender = true;
         let resizeObserver = null;
@@ -1590,10 +1591,13 @@ HTMLWidgets.widget({
                 try {
                     let X, Y, Z, W, n;
                     if (msg.type === 'vp_overview' && entry._overview) {
-                        // zoom-out: redraw the cached overview (no transfer/decode)
+                        // zoom-out: redraw the cached overview (no transfer/decode),
+                        // restoring its tooltip/filter buffers too.
                         const o = entry._overview;
                         X = o.x; Y = o.y; Z = o.z; W = o.w; n = o.n;
                         if (o.categoryData) entry.categoryData = o.categoryData;
+                        if (o.tooltip) tooltipFields = o.tooltip;
+                        if (o.filter) entry.filterData = o.filter;
                     } else {
                         const lt = entry.legend && entry.legend.var_type;
                         const zmode = lt === 'categorical' ? 'u16i'
@@ -1605,8 +1609,22 @@ HTMLWidgets.widget({
                         n = msg.n_points;
                         if (Z && Z.length > X.length) Z = Z.subarray(0, X.length);
                         if (msg.group_data) entry.categoryData = decodeBase64(msg.group_data);
+                        // refresh hover fields + filter ranges for the new in-view cells
+                        if (Array.isArray(msg.tooltip_data)) {
+                            tooltipFields = msg.tooltip_data.map((f) => (f.kind === 'num')
+                                ? { name: f.name, kind: 'num', arr: decodeBase64(f.data) }
+                                : { name: f.name, kind: 'cat', codes: decodeBase64(f.codes), levels: f.levels });
+                        }
+                        if (msg.filter_data) {
+                            const fb = {};
+                            Object.keys(msg.filter_data).forEach((k) => { fb[k] = decodeBase64(msg.filter_data[k]); });
+                            entry.filterData = fb;
+                        }
                     }
                     entry.xData = X; entry.yData = Y; entry.zData = Z; entry.n_points = n;
+                    // the hover/tooltip handler reads the closure dataBuffers (not
+                    // entry.*), so refresh them too or hover shows stale coords/values.
+                    dataBuffers.x = X; dataBuffers.y = Y; dataBuffers.z = Z; dataBuffers.w = W;
 
                     // A viewport swap invalidates POSITIONAL state. The kernel
                     // re-maps the persistent selection to the new in-view positions
@@ -2173,6 +2191,7 @@ HTMLWidgets.widget({
                     _overview: xData.detailOnZoom ? {
                         x: dataBuffers.x, y: dataBuffers.y, z: dataBuffers.z,
                         w: dataBuffers.w, n: n, categoryData: catData,
+                        filter: filterBuffers, tooltip: null,   // tooltip set after its setup below
                     } : null,
                     filterData: filterBuffers, categoryData: catData,
                     colorVar: xData.colorVar, groupVar: xData.groupVar, 
@@ -2325,12 +2344,15 @@ HTMLWidgets.widget({
                 if (xData.showTooltip && tooltip) {
                     // Extra hover fields (tooltipBy): numeric -> raw float buffer;
                     // categorical -> integer codes + level labels.
-                    let tooltipFields = [];
+                    tooltipFields = [];
                     if (Array.isArray(xData.tooltip_data)) {
                         tooltipFields = xData.tooltip_data.map((f) => (f.kind === 'num')
                             ? { name: f.name, kind: 'num', arr: decodeBase64(f.data) }
                             : { name: f.name, kind: 'cat', codes: decodeBase64(f.codes), levels: f.levels });
                     }
+                    // cache for the detail-on-zoom overview restore (zoom-out)
+                    { const _eo = globalRegistry.get(plotId);
+                      if (_eo && _eo._overview) _eo._overview.tooltip = tooltipFields; }
                     const colorVarName = (xData.colorVar && xData.colorVar !== 'Solid_Color') ? xData.colorVar : 'Value';
                     const unsubOver = plot.subscribe('pointOver', (i) => {
                         const nx = dataBuffers.x[i]; const ny = dataBuffers.y[i];
