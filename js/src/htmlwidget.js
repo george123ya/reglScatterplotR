@@ -562,8 +562,10 @@ function syncCameraAcrossPlots(sourcePlotId) {
             }
             // The camera was moved silently (preventEvent), so a detail-on-zoom
             // sibling won't fetch on its own — nudge it (debounced) to re-render
-            // the in-view cells for the synced viewport.
-            if (entry.emitViewport && entry.getViewportBounds) {
+            // the in-view cells for the synced viewport. ONLY for detail-on-zoom
+            // panels: a plain (all-resident) sibling has no viewport handler, so
+            // emitting would show a loader that never gets a response to clear it.
+            if (entry.detailOnZoom && entry.emitViewport && entry.getViewportBounds) {
                 if (entry._syncFetchTimer) clearTimeout(entry._syncFetchTimer);
                 entry._syncFetchTimer = setTimeout(() => {
                     try { const b = entry.getViewportBounds(); if (b) entry.emitViewport(b); } catch (e) {}
