@@ -1614,6 +1614,11 @@ HTMLWidgets.widget({
                 // / a reset) so stale rectangular detail tiles don't clobber the
                 // latest view. vp_select (lasso) carries no seq -> always applies.
                 if (msg.seq != null && msg.seq < _vpSeq) return;
+                // A (non-stale) response arrived -> the fetch is done; clear the
+                // loader NOW, before any decode/draw, so it can never get stuck even
+                // if the rest throws.
+                if (_vpLoadTimer) { clearTimeout(_vpLoadTimer); _vpLoadTimer = null; }
+                try { loader.style.display = 'none'; } catch (e) {}
                 // no-op: the kernel had nothing new to draw (fetch skipped/covered) —
                 // just clear the loading indicator so it never gets stuck on.
                 if (msg.type === 'vp_noop') {
