@@ -2236,23 +2236,6 @@ HTMLWidgets.widget({
 
                 let _axisRaf = null;
                 let _vpTimer = null;
-                // Motion-LOD: while the camera is actively moving, draw a light
-                // strided subset so panning a big point cloud stays smooth; restore
-                // the full set (and the selection) once it settles.
-                let _lodTimer = null, _lodActive = false;
-                const _lodTarget = 60000;     // points to draw during motion
-                const _lodThreshold = 120000; // only kick in above this many points
-                const _lodDraw = (stride) => {
-                    const X = dataBuffers.x, Y = dataBuffers.y, Z = dataBuffers.z, W = dataBuffers.w;
-                    const e0 = globalRegistry.get(plotId);
-                    const N = (e0 && e0.n_points) || 0;
-                    if (!X || N === 0) return;
-                    const pts = [];
-                    if (W) { for (let i=0;i<N;i+=stride) pts.push([X[i],Y[i],Z?Z[i]:0,W[i]]); }
-                    else if (Z) { for (let i=0;i<N;i+=stride) pts.push([X[i],Y[i],Z[i]]); }
-                    else { for (let i=0;i<N;i+=stride) pts.push([X[i],Y[i]]); }
-                    try { plot.draw(pts); } catch (e) {}
-                };
                 const unsubView = plot.subscribe('view', () => {
                     // Coalesce the (d3) axis redraw to one per animation frame -
                     // calling it on every view event made panning feel laggy.
@@ -2267,23 +2250,6 @@ HTMLWidgets.widget({
                         // currently inside a programmatic resize / zoom call.
                         if (!e.isInitializing && !suppressTouchedFlip) {
                             e.cameraTouched = true;
-                        }
-                    }
-                    // motion-LOD: thin the cloud while moving, restore at rest.
-                    if (xData.detailOnZoom && e && e.cameraTouched && !e.isInitializing) {
-                        const N = e.n_points || 0;
-                        if (N > _lodThreshold && !_lodActive) {
-                            _lodActive = true;
-                            _lodDraw(Math.max(2, Math.ceil(N / _lodTarget)));   // light subset
-                        }
-                        if (_lodActive) {
-                            if (_lodTimer) clearTimeout(_lodTimer);
-                            _lodTimer = setTimeout(() => {
-                                _lodActive = false;
-                                _lodDraw(1);   // full detail back
-                                const sel = e.selectedIndices;
-                                if (sel && sel.length) try { plot.select(sel, { preventEvent: true }); } catch (er) {}
-                            }, 180);
                         }
                     }
                     // detail-on-zoom: once the user has moved, debounce-emit the
