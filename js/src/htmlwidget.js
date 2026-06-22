@@ -1773,7 +1773,11 @@ HTMLWidgets.widget({
                     plot = createScatterplot({
                         renderer, canvas, width: cW, height: cH, pixelRatio: dpr,
                         xScale: intXScale, yScale: intYScale, pointSize: xData.options.size,
-                        aspectRatio: initialAspectRatio, performanceMode: xData.performanceMode
+                        aspectRatio: initialAspectRatio, performanceMode: xData.performanceMode,
+                        // Build the KDBush spatial index (lasso/hover hit-testing) in a
+                        // Web Worker so it doesn't block/freeze the main thread on large
+                        // data — regl-scatterplot builds it eagerly on every draw().
+                        spatialIndexUseWorker: true
                     });
                     const newConf = { pointSize: xData.options.size, pointColor: xData.options.pointColor, opacity: xData.options.opacity };
                     newConf.colorBy = xData.options.colorBy ? xData.options.colorBy : null;
