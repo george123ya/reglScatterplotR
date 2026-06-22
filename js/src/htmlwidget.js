@@ -1634,6 +1634,9 @@ HTMLWidgets.widget({
                     if (W) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z?Z[i]:0, W[i]]; }
                     else if (Z) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z[i]]; }
                     else { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i]]; }
+                    // Clear the old highlight BEFORE drawing the new points, else the
+                    // previous selection's indices flash on the new set mid-swap.
+                    try { entry.plot.deselect({ preventEvent: true }); } catch (e) {}
                     // AWAIT the draw: plot.draw resolves only after the new points
                     // (and spatial index) are in place. Selecting before it settles
                     // applies the indices to the OLD points -> random highlights.
@@ -1914,6 +1917,20 @@ HTMLWidgets.widget({
                             plot.set({ cameraView: cloneCamera(ent.initialCameraView) });
                         } else {
                             plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true });
+                        }
+                        // detail-on-zoom: a programmatic reset may not emit a 'view'
+                        // event, so force the overview to re-load — otherwise only the
+                        // zoomed-in detail points remain (a tiny cluster, rest empty).
+                        if (xData.detailOnZoom && xDomainOrig && yDomainOrig) {
+                            setTimeout(() => {
+                                try {
+                                    container.dispatchEvent(new CustomEvent('sp-viewport', {
+                                        detail: { plotId: plotId,
+                                                  bounds: [xDomainOrig[0], yDomainOrig[0],
+                                                           xDomainOrig[1], yDomainOrig[1]] },
+                                        bubbles: false }));
+                                } catch (e) {}
+                            }, 60);
                         }
                     } catch (err) {}
                 };
