@@ -71,6 +71,14 @@ function mount(el, model) {
     model.save_changes();
   };
   container.addEventListener("sp-selection", onSel);
+
+  // Detail-on-zoom: forward the current viewport to the kernel, which re-renders
+  // the cells inside it (full detail when zoomed in). model.send -> widget.on_msg.
+  const onViewport = (ev) => {
+    try { model.send({ type: "viewport", bounds: ev.detail.bounds }); } catch (e) {}
+  };
+  container.addEventListener("sp-viewport", onViewport);
+
   const onModelSel = () => {
     if (typeof inst.setSelection !== "function") return;
     applyingFromModel = true;
@@ -86,6 +94,7 @@ function mount(el, model) {
   return () => {
     ro.disconnect();
     container.removeEventListener("sp-selection", onSel);
+    container.removeEventListener("sp-viewport", onViewport);
     model.off("change:_selection", onModelSel);
     container.remove();
   };

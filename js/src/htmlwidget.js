@@ -1913,6 +1913,22 @@ HTMLWidgets.widget({
                     titleDiv.style.display = 'none';
                 }
 
+                // The current view as ORIGINAL data-coordinate bounds
+                // [x0,y0,x1,y1] (detail-on-zoom asks the kernel for the cells in
+                // here). Same camera->data math as updateAxesFromCamera, minus the
+                // axes guard so it works whether or not axes are shown.
+                const getViewportBounds = function() {
+                    if (!plot || !xDomainOrig || !yDomainOrig) return null;
+                    const xs = plot.get('xScale'), ys = plot.get('yScale');
+                    if (!xs || !ys) return null;
+                    const vnX = xs.domain(), vnY = ys.domain();
+                    const ox = (v) => xDomainOrig[0] + (v+1)/2 * (xDomainOrig[1]-xDomainOrig[0]);
+                    const oy = (v) => yDomainOrig[0] + (v+1)/2 * (yDomainOrig[1]-yDomainOrig[0]);
+                    const X = [ox(vnX[0]), ox(vnX[1])], Y = [oy(vnY[0]), oy(vnY[1])];
+                    return [Math.min(X[0],X[1]), Math.min(Y[0],Y[1]),
+                            Math.max(X[0],X[1]), Math.max(Y[0],Y[1])];
+                };
+
                 const updateAxesFromCamera = function() {
                     if (!xData.showAxes || !plot || !xScale || !yScale) return;
                     const evt = { xScale: plot.get('xScale'), yScale: plot.get('yScale') };
@@ -2045,6 +2061,7 @@ HTMLWidgets.widget({
                 recalcAndApplyFilters(globalRegistry.get(plotId));
 
                 let _axisRaf = null;
+                let _vpTimer = null;
                 const unsubView = plot.subscribe('view', () => {
                     // Coalesce the (d3) axis redraw to one per animation frame -
                     // calling it on every view event made panning feel laggy.
@@ -2060,6 +2077,18 @@ HTMLWidgets.widget({
                         if (!e.isInitializing && !suppressTouchedFlip) {
                             e.cameraTouched = true;
                         }
+                    }
+                    // detail-on-zoom: once the user has moved, debounce-emit the
+                    // current viewport so the kernel can re-render the in-view cells.
+                    if (xData.detailOnZoom && e && e.cameraTouched && !e.isInitializing) {
+                        if (_vpTimer) clearTimeout(_vpTimer);
+                        _vpTimer = setTimeout(() => {
+                            const b = getViewportBounds();
+                            if (b) try {
+                                container.dispatchEvent(new CustomEvent('sp-viewport',
+                                    { detail: { plotId: plotId, bounds: b }, bubbles: false }));
+                            } catch (err) {}
+                        }, 350);
                     }
                     if(!globalRegistry.globalSyncEnabled) return;
                     if (globalRegistry.get(plotId).isInitializing) return;
