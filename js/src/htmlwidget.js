@@ -1583,23 +1583,54 @@ HTMLWidgets.widget({
                 const entry = globalRegistry.get(plotId);
                 if (!entry || !entry.plot || entry.plot._destroyed || !msg) return;
                 try {
-                    const lt = entry.legend && entry.legend.var_type;
-                    const zmode = lt === 'categorical' ? 'u16i'
-                                : (lt === 'continuous' ? 'u16u' : 'f32');
-                    const X = decodeChannel(msg.x, 'u16');
-                    const Y = decodeChannel(msg.y, 'u16');
-                    let Z = msg.z ? decodeChannel(msg.z, zmode) : null;
-                    const W = msg.w ? decodeChannel(msg.w, 'u16u') : null;
-                    const n = msg.n_points;
-                    if (Z && Z.length > X.length) Z = Z.subarray(0, X.length);
+                    let X, Y, Z, W, n;
+                    if (msg.type === 'vp_overview' && entry._overview) {
+                        // zoom-out: redraw the cached overview (no transfer/decode)
+                        const o = entry._overview;
+                        X = o.x; Y = o.y; Z = o.z; W = o.w; n = o.n;
+                        if (o.categoryData) entry.categoryData = o.categoryData;
+                    } else {
+                        const lt = entry.legend && entry.legend.var_type;
+                        const zmode = lt === 'categorical' ? 'u16i'
+                                    : (lt === 'continuous' ? 'u16u' : 'f32');
+                        X = decodeChannel(msg.x, 'u16');
+                        Y = decodeChannel(msg.y, 'u16');
+                        Z = msg.z ? decodeChannel(msg.z, zmode) : null;
+                        W = msg.w ? decodeChannel(msg.w, 'u16u') : null;
+                        n = msg.n_points;
+                        if (Z && Z.length > X.length) Z = Z.subarray(0, X.length);
+                        if (msg.group_data) entry.categoryData = decodeBase64(msg.group_data);
+                    }
                     entry.xData = X; entry.yData = Y; entry.zData = Z; entry.n_points = n;
-                    if (msg.group_data) entry.categoryData = decodeBase64(msg.group_data);
+
+                    // A viewport swap invalidates POSITIONAL state. Clear the lasso
+                    // selection (its indices point into the OLD point set -> would
+                    // highlight random cells), and RECOMPUTE the categorical legend
+                    // filters from the new per-point codes (the chosen categories
+                    // persist; their index sets must be rebuilt or they mis-filter).
+                    try { entry.plot.deselect({ preventEvent: false }); } catch (e) {}
+                    entry.selectedIndices = [];
+                    if (entry.indexFilters && entry.categorySelections) {
+                        entry.indexFilters.clear();
+                        entry.categorySelections.forEach((sel, varName) => {
+                            let buf = null;
+                            if (entry.colorVar === varName) buf = entry.zData;
+                            else if (entry.groupVar === varName) buf = entry.categoryData;
+                            if (buf && sel && sel.size) {
+                                const s = new Set();
+                                for (let p = 0; p < n; p++) if (sel.has(Math.round(buf[p]))) s.add(p);
+                                entry.indexFilters.set(varName, s);
+                            }
+                        });
+                    }
+
                     const pts = new Array(n);
                     if (W) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z?Z[i]:0, W[i]]; }
                     else if (Z) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z[i]]; }
                     else { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i]]; }
                     entry.plot.draw(pts);
                     if (typeof recalcAndApplyFilters === 'function') recalcAndApplyFilters(entry);
+                    if (entry.updateLegendUI) entry.updateLegendUI();
                 } catch (e) { console.error('[reglScatterplot] updateData failed', e); }
             },
             renderValue: async function(xData) {
@@ -2090,7 +2121,13 @@ HTMLWidgets.widget({
                     plotId, plot, canvas, updateAxesFromCamera, syncGroup,
                     initialCameraView: cloneCamera(plot.get('cameraView')), savedCameraView: initialView, 
                     xData: dataBuffers.x, yData: dataBuffers.y, zData: dataBuffers.z,
-                    filterData: filterBuffers, categoryData: catData, 
+                    // detail-on-zoom: cache the overview buffers so zoom-out redraws
+                    // them instantly (no channel transfer/decode over the comm).
+                    _overview: xData.detailOnZoom ? {
+                        x: dataBuffers.x, y: dataBuffers.y, z: dataBuffers.z,
+                        w: dataBuffers.w, n: n, categoryData: catData,
+                    } : null,
+                    filterData: filterBuffers, categoryData: catData,
                     colorVar: xData.colorVar, groupVar: xData.groupVar, 
                     options: xData.options, legend: xData.legend, n_points: n,
                     updateLegendUI: updateLegendUI, createLegend: createLegend,
