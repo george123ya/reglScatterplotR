@@ -2236,6 +2236,13 @@ HTMLWidgets.widget({
 
                 let _axisRaf = null;
                 let _vpTimer = null;
+                // Motion-LOD (cheap): shrink the point size while the camera moves so
+                // a dense cloud thins out and pans smoothly (less overdraw), then
+                // restore at rest. Just a uniform change — NO point re-upload/index
+                // rebuild, so no freeze on release (unlike the count-based version).
+                let _lodTimer = null, _lodActive = false;
+                const _lodThreshold = 120000;
+                const _lodOrigSize = (xData.options && xData.options.size) || 3;
                 const unsubView = plot.subscribe('view', () => {
                     // Coalesce the (d3) axis redraw to one per animation frame -
                     // calling it on every view event made panning feel laggy.
@@ -2251,6 +2258,19 @@ HTMLWidgets.widget({
                         if (!e.isInitializing && !suppressTouchedFlip) {
                             e.cameraTouched = true;
                         }
+                    }
+                    // motion-LOD: shrink points while moving (cheap), restore at rest.
+                    if (xData.detailOnZoom && e && e.cameraTouched && !e.isInitializing
+                            && (e.n_points || 0) > _lodThreshold) {
+                        if (!_lodActive) {
+                            _lodActive = true;
+                            try { plot.set({ pointSize: Math.max(1, _lodOrigSize * 0.4) }); } catch (er) {}
+                        }
+                        if (_lodTimer) clearTimeout(_lodTimer);
+                        _lodTimer = setTimeout(() => {
+                            _lodActive = false;
+                            try { plot.set({ pointSize: _lodOrigSize }); } catch (er) {}
+                        }, 150);
                     }
                     // detail-on-zoom: once the user has moved, debounce-emit the
                     // current viewport so the kernel can re-render the in-view cells.
