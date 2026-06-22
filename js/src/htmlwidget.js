@@ -1213,8 +1213,18 @@ HTMLWidgets.widget({
                               if (buffer) { for(let p=0; p<n; p++) { if (currentSelections.has(Math.round(buffer[p]))) { newIndexSet.add(p); } } entry.indexFilters.set(myVar, newIndexSet); }
                           }
                           if (entry.updateLegendUI) entry.updateLegendUI();
-                          recalcAndApplyFilters(entry);
-                          propagateFiltersToGroup(entry);
+                          if (xData.detailOnZoom) {
+                              // progressive: filter via the kernel (original-cell ->
+                              // syncs cross-variable across linked panels) instead of
+                              // the local positional path.
+                              const cs = entry.categorySelections.get(myVar);
+                              const names = cs ? Array.from(cs).map(ix => legendData.names[ix]) : null;
+                              try { container.dispatchEvent(new CustomEvent('sp-legendfilter',
+                                  { detail: { plotId: plotId, cats: names }, bubbles: false })); } catch (e) {}
+                          } else {
+                              recalcAndApplyFilters(entry);
+                              propagateFiltersToGroup(entry);
+                          }
                           if (window.Shiny && window.Shiny.setInputValue) {
                               const allowedIndices = currentSelections ? Array.from(currentSelections) : null;
                               let allowedNames = null;
@@ -1633,6 +1643,14 @@ HTMLWidgets.widget({
                                    : entry.plot.deselect({ preventEvent: true }); } catch (e) {}
                     return;
                 }
+                // synced legend filter (original-cell): keep positions, null = show all
+                if (msg.type === 'vp_filter') {
+                    try {
+                        if (msg.keep === null) entry.plot.unfilter({ preventEvent: true });
+                        else if (Array.isArray(msg.keep)) entry.plot.filter(msg.keep, { preventEvent: true });
+                    } catch (e) {}
+                    return;
+                }
                 try {
                     let X, Y, Z, W, n;
                     if (msg.type === 'vp_overview' && entry._overview) {
@@ -1716,6 +1734,14 @@ HTMLWidgets.widget({
                     } catch (e) {}
                     if (typeof recalcAndApplyFilters === 'function') recalcAndApplyFilters(entry);
                     if (entry.updateLegendUI) entry.updateLegendUI();
+                    // synced legend filter applied AFTER recalc so it wins; keep
+                    // positions / null = show all / undefined = leave as-is.
+                    if (msg.keep !== undefined) {
+                        try {
+                            if (msg.keep === null) entry.plot.unfilter({ preventEvent: true });
+                            else entry.plot.filter(msg.keep, { preventEvent: true });
+                        } catch (e) {}
+                    }
                     if (_vpLoadTimer) { clearTimeout(_vpLoadTimer); _vpLoadTimer = null; }
                     try { loader.style.display = 'none'; } catch (e) {}   // detail fetch done
                 } catch (e) { console.error('[reglScatterplot] updateData failed', e); }

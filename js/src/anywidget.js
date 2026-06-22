@@ -86,6 +86,12 @@ function mount(el, model) {
   };
   container.addEventListener("sp-lasso", onLasso);
 
+  // Legend category filter -> kernel resolves to original cells + syncs the group.
+  const onLegendFilter = (ev) => {
+    try { model.send({ type: "legend_filter", cats: ev.detail.cats }); } catch (e) {}
+  };
+  container.addEventListener("sp-legendfilter", onLegendFilter);
+
   // Kernel pushes new in-view points (detail-on-zoom) -> swap them on the existing
   // plot via plot.draw (no re-render / no spinner). A custom message, NOT a _spec
   // change, so the widget never re-mounts.
@@ -114,6 +120,7 @@ function mount(el, model) {
     container.removeEventListener("sp-selection", onSel);
     container.removeEventListener("sp-viewport", onViewport);
     container.removeEventListener("sp-lasso", onLasso);
+    container.removeEventListener("sp-legendfilter", onLegendFilter);
     model.off("msg:custom", onMsg);
     model.off("change:_selection", onModelSel);
     container.remove();
