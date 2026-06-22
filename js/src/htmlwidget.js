@@ -560,6 +560,15 @@ function syncCameraAcrossPlots(sourcePlotId) {
             if (entry.updateAxesFromCamera && !entry.axisThrottle) {
                 entry.axisThrottle = requestAnimationFrame(() => { entry.updateAxesFromCamera(); entry.axisThrottle = null; });
             }
+            // The camera was moved silently (preventEvent), so a detail-on-zoom
+            // sibling won't fetch on its own — nudge it (debounced) to re-render
+            // the in-view cells for the synced viewport.
+            if (entry.emitViewport && entry.getViewportBounds) {
+                if (entry._syncFetchTimer) clearTimeout(entry._syncFetchTimer);
+                entry._syncFetchTimer = setTimeout(() => {
+                    try { const b = entry.getViewportBounds(); if (b) entry.emitViewport(b); } catch (e) {}
+                }, 360);
+            }
           } catch (e) {}
       }
   });
@@ -2373,7 +2382,14 @@ HTMLWidgets.widget({
                     globalRegistry.leaderTimeout = setTimeout(() => { globalRegistry.syncLeader = null; }, 50);
                 });
                 window.__spUnsubscribers[plotId].push(unsubView);
-                
+                // Expose this panel's detail-on-zoom fetch hooks so a synced
+                // sibling (whose camera is moved with preventEvent, so its own
+                // 'view' handler never fires) can be told to fetch detail for the
+                // shared viewport. Without this, linked progressive panels stay
+                // frozen on the overview while the panned/zoomed panel updates.
+                { const _e = globalRegistry.get(plotId);
+                  if (_e) { _e.emitViewport = _emitViewport; _e.getViewportBounds = getViewportBounds; } }
+
                 // Report a selection everywhere: Shiny input + a DOM event that
                 // non-Shiny hosts (the anywidget adapter) bridge to a model trait
                 // so Python can read `w.selection`. Always fires, regardless of
