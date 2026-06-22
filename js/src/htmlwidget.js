@@ -1222,7 +1222,7 @@ HTMLWidgets.widget({
                               if (buffer) { for(let p=0; p<n; p++) { if (currentSelections.has(Math.round(buffer[p]))) { newIndexSet.add(p); } } entry.indexFilters.set(myVar, newIndexSet); }
                           }
                           if (entry.updateLegendUI) entry.updateLegendUI();
-                          if (xData.detailOnZoom) {
+                          if (entry.detailOnZoom) {   // NB: xData is out of scope here (factory, not renderValue)
                               // progressive: filter via the kernel (original-cell ->
                               // syncs cross-variable across linked panels) instead of
                               // the local positional path.
@@ -2293,7 +2293,8 @@ HTMLWidgets.widget({
                         filter: filterBuffers, tooltip: null,   // tooltip set after its setup below
                     } : null,
                     filterData: filterBuffers, categoryData: catData,
-                    colorVar: xData.colorVar, groupVar: xData.groupVar, 
+                    colorVar: xData.colorVar, groupVar: xData.groupVar,
+                    detailOnZoom: xData.detailOnZoom,   // read in the legend-click handler (factory scope, no xData)
                     options: xData.options, legend: xData.legend, n_points: n,
                     updateLegendUI: updateLegendUI, createLegend: createLegend,
                     isInitializing: true, autoFit: xData.autoFit, serverIndices: xData.init_server_indices,
