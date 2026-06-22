@@ -1635,15 +1635,16 @@ HTMLWidgets.widget({
                 if (!entry || !entry.plot || entry.plot._destroyed || !msg) return;
                 // Selection-only update (full-region lasso result): apply on the
                 // current points, no redraw.
-                // Drop responses to superseded viewport requests (racing pans/zooms
-                // / a reset) so stale rectangular detail tiles don't clobber the
-                // latest view. vp_select (lasso) carries no seq -> always applies.
-                if (msg.seq != null && msg.seq < _vpSeq) return;
-                // A (non-stale) response arrived -> the fetch is done; clear the
-                // loader NOW, before any decode/draw, so it can never get stuck even
-                // if the rest throws.
+                // ANY response means a fetch returned -> clear the loader FIRST,
+                // before the staleness check, so a superseded request (e.g. a reset
+                // bumped the seq while this was in flight) can never leave the spinner
+                // stuck on in a linked sibling.
                 if (_vpLoadTimer) { clearTimeout(_vpLoadTimer); _vpLoadTimer = null; }
                 try { loader.style.display = 'none'; } catch (e) {}
+                // Drop the stale response's DATA (racing pans/zooms / a reset) so
+                // stale detail tiles don't clobber the latest view. vp_select (lasso)
+                // carries no seq -> always applies.
+                if (msg.seq != null && msg.seq < _vpSeq) return;
                 // no-op: the kernel had nothing new to draw (fetch skipped/covered) —
                 // just clear the loading indicator so it never gets stuck on.
                 if (msg.type === 'vp_noop') {
@@ -2045,13 +2046,18 @@ HTMLWidgets.widget({
                         if (xData.detailOnZoom) {
                             _vpSeq++;   // invalidate any in-flight detail responses first
                             const ent2 = globalRegistry.get(plotId);
+                            // double-click resets the view AND clears the selection
+                            // (regl's own dblclick deselects too) — clear it locally
+                            // so a stale lasso / persisted selection can't re-appear.
+                            try { plot.deselect({ preventEvent: true }); } catch (e) {}
+                            if (ent2) ent2.selectedIndices = [];
                             if (ent2 && ent2._overview && instance && instance.updateData) {
                                 try { instance.updateData({ type: 'vp_overview' }); } catch (e) {}
                             }
                             if (xDomainOrig && yDomainOrig) {
-                                setTimeout(() => {   // re-sync kernel (reuse the bumped seq)
+                                setTimeout(() => {   // re-sync kernel (reuse the bumped seq); reset=true clears vp.sel
                                     _emitViewport([xDomainOrig[0], yDomainOrig[0],
-                                                   xDomainOrig[1], yDomainOrig[1]], false);
+                                                   xDomainOrig[1], yDomainOrig[1]], false, true);
                                 }, 60);
                             }
                         }
@@ -2332,14 +2338,14 @@ HTMLWidgets.widget({
                 let _lodTimer = null, _lodActive = false;
                 const _lodThreshold = 120000;
                 const _lodOrigSize = (xData.options && xData.options.size) || 3;
-                const _emitViewport = (bounds, bump) => {
+                const _emitViewport = (bounds, bump, reset) => {
                     if (bump !== false) _vpSeq++;     // bump=false reuses the current seq
                     // show the loader if the fetch is slow (delayed so fast ones don't flash)
                     if (_vpLoadTimer) clearTimeout(_vpLoadTimer);
                     _vpLoadTimer = setTimeout(() => { try { loader.innerHTML = ''; loader.style.display = 'block'; } catch (e) {} }, 350);
                     try {
                         container.dispatchEvent(new CustomEvent('sp-viewport',
-                            { detail: { plotId: plotId, bounds: bounds, seq: _vpSeq }, bubbles: false }));
+                            { detail: { plotId: plotId, bounds: bounds, seq: _vpSeq, reset: !!reset }, bubbles: false }));
                     } catch (e) {}
                 };
                 const unsubView = plot.subscribe('view', () => {

@@ -75,7 +75,7 @@ function mount(el, model) {
   // Detail-on-zoom: forward the current viewport to the kernel, which re-renders
   // the cells inside it (full detail when zoomed in). model.send -> widget.on_msg.
   const onViewport = (ev) => {
-    try { model.send({ type: "viewport", bounds: ev.detail.bounds, seq: ev.detail.seq }); } catch (e) {}
+    try { model.send({ type: "viewport", bounds: ev.detail.bounds, seq: ev.detail.seq, reset: ev.detail.reset }); } catch (e) {}
   };
   container.addEventListener("sp-viewport", onViewport);
 
