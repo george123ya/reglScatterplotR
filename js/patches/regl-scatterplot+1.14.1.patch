@@ -1,5 +1,5 @@
 diff --git a/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js b/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
-index 53a1937..d53355f 100644
+index 53a1937..9270e14 100644
 --- a/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
 +++ b/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
 @@ -5054,6 +5054,10 @@ const FRAGMENT_SHADER = `
@@ -34,7 +34,23 @@ index 53a1937..d53355f 100644
  }
  `;
  
-@@ -6878,6 +6890,13 @@ const createScatterplot = (
+@@ -5688,6 +5700,7 @@ const createScatterplot = (
+   let mouseDownTimeout = -1;
+   /** @type{number[]} */
+   let selectedPoints = [];
++  let highlightPoints = [];   // sp- patch: persistent highlight (survives deselect/lasso)
+   /** @type{Set<number>} */
+   const selectedPointsSet = new Set();
+   /** @type{Set<number>} */
+@@ -5844,6 +5857,7 @@ const createScatterplot = (
+   let stateTexEps = 0; // Half a texel
+   let normalPointsIndexBuffer; // Buffer holding the indices pointing to the correct texel
+   let selectedPointsIndexBuffer; // Used for pointing to the selected texels
++  let highlightPointsIndexBuffer; // sp- patch: persistent highlight texels
+   let hoveredPointIndexBuffer; // Used for pointing to the hovered texels
+ 
+   let cameraZoomTargetStart; // Stores the start (i.e., current) camera target for zooming
+@@ -6878,6 +6892,13 @@ const createScatterplot = (
    };
  
    const getAntiAliasing = () => antiAliasing;
@@ -48,7 +64,30 @@ index 53a1937..d53355f 100644
    const getResolution = () => [canvas.width, canvas.height];
    const getBackgroundImage = () => backgroundImage;
    const getColorTex = () => colorTex;
-@@ -7048,6 +7067,10 @@ const createScatterplot = (
+@@ -6922,6 +6943,22 @@ const createScatterplot = (
+   const getNormalNumPoints = () =>
+     isPointsFiltered ? filteredPointsSet.size : numPoints;
+   const getSelectedNumPoints = () => selectedPoints.length;
++  // sp- patch: persistent highlight set (rendered like a selection, but it is
++  // NOT the selection, so it survives deselect / new lasso / double-click).
++  const getHighlightNumPoints = () => highlightPoints.length;
++  const getHighlightPointsIndexBuffer = () => highlightPointsIndexBuffer;
++  const setHighlightPoints = (points) => {
++    highlightPoints = (Array.isArray(points) ? points : []).map(Number)
++      .filter((i) => i >= 0 && i < numPoints);
++    const buf = [];
++    for (let i = 0; i < highlightPoints.length; i++) {
++      const tc = indexToStateTexCoord(highlightPoints[i]);
++      buf.push(tc[0], tc[1]);
++    }
++    if (!highlightPointsIndexBuffer) highlightPointsIndexBuffer = renderer.regl.buffer();
++    highlightPointsIndexBuffer({ usage: 'dynamic', type: 'float', data: buf });
++    draw = true;
++  };
+   const getPointOpacityMaxBase = () =>
+     getSelectedNumPoints() > 0 ? opacityInactiveMax : 1;
+   const getPointOpacityScaleBase = () =>
+@@ -7048,6 +7085,10 @@ const createScatterplot = (
  
        uniforms: {
          antiAliasing: getAntiAliasing,
@@ -59,7 +98,47 @@ index 53a1937..d53355f 100644
          resolution: getResolution,
          modelViewProjection: getModelViewProjection,
          devicePixelRatio: getDevicePixelRatio,
-@@ -9383,6 +9406,14 @@ const createScatterplot = (
+@@ -7135,6 +7176,39 @@ const createScatterplot = (
+     drawSelectedPointBodies();
+   };
+ 
++  // sp- patch: persistent highlight, same crisp ring + size bump as the selection
++  // but the body keeps the point's OWN colour (COLOR_NORMAL_IDX) so it reads as a
++  // marker, not a selection. Outer ring uses the active colour, inner gap the bg.
++  const drawHighlightPointOutlines = drawPoints(
++    () => (pointSizeSelected + pointOutlineWidth * 2) * window.devicePixelRatio,
++    getHighlightNumPoints,
++    getHighlightPointsIndexBuffer,
++    COLOR_ACTIVE_IDX,
++    () => 1,
++    () => 1,
++  );
++  const drawHighlightPointInnerBorder = drawPoints(
++    () => (pointSizeSelected + pointOutlineWidth) * window.devicePixelRatio,
++    getHighlightNumPoints,
++    getHighlightPointsIndexBuffer,
++    COLOR_BG_IDX,
++    () => 1,
++    () => 1,
++  );
++  const drawHighlightPointBodies = drawPoints(
++    () => pointSizeSelected * window.devicePixelRatio,
++    getHighlightNumPoints,
++    getHighlightPointsIndexBuffer,
++    COLOR_NORMAL_IDX,
++    () => 1,
++    () => 1,
++  );
++  const drawHighlightPoints = () => {
++    drawHighlightPointOutlines();
++    drawHighlightPointInnerBorder();
++    drawHighlightPointBodies();
++  };
++
+   const drawBackgroundImage = renderer.regl({
+     frag: FRAGMENT_SHADER$2,
+     vert: VERTEX_SHADER,
+@@ -9383,6 +9457,18 @@ const createScatterplot = (
        setAntiAliasing(properties.antiAliasing);
      }
  
@@ -71,6 +150,29 @@ index 53a1937..d53355f 100644
 +      if (Array.isArray(o.gapColor)) spOutline.gapColor = o.gapColor;
 +    }
 +
++    if (properties.highlightPoints !== undefined) {   // sp- patch
++      setHighlightPoints(properties.highlightPoints);
++    }
++
      if (properties.pixelAligned !== undefined) {
        setPixelAligned(properties.pixelAligned);
      }
+@@ -9669,6 +9755,7 @@ const createScatterplot = (
+     // Buffers
+     normalPointsIndexBuffer = renderer.regl.buffer();
+     selectedPointsIndexBuffer = renderer.regl.buffer();
++    highlightPointsIndexBuffer = renderer.regl.buffer();   // sp- patch
+     hoveredPointIndexBuffer = renderer.regl.buffer({
+       usage: 'dynamic',
+       type: 'float',
+@@ -9768,6 +9855,10 @@ const createScatterplot = (
+         drawHoveredPoint();
+       }
+ 
++      if (highlightPoints.length > 0) {   // sp- patch: persistent highlight (under the live selection)
++        drawHighlightPoints();
++      }
++
+       if (selectedPoints.length > 0) {
+         drawSelectedPoints();
+       }

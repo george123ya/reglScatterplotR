@@ -2676,6 +2676,19 @@ HTMLWidgets.widget({
                 const e = globalRegistry.get(plotId);
                 return (e && e.selectedIndices) || [];
             },
+            // Persistent highlight: mark points with the engine's crisp ring + size
+            // bump (patched into regl-scatterplot), independent of the selection so
+            // it survives double-click / new lasso. positions are POSITIONAL indices
+            // into the current draw; color sets the ring colour (pointColorActive).
+            setHighlight: function(content) {
+                if (!plot) return;
+                const e = globalRegistry.get(plotId);
+                if (e) e.highlightPoints = Array.isArray(content.points) ? content.points : [];
+                try {
+                    if (content.color) plot.set({ pointColorActive: content.color });
+                    plot.set({ highlightPoints: (content.points || []) });
+                } catch (err) {}
+            },
 
             resize: function(w, h) {
                 widgetWidth = w;

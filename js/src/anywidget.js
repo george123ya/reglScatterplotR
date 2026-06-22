@@ -96,9 +96,11 @@ function mount(el, model) {
   // plot via plot.draw (no re-render / no spinner). A custom message, NOT a _spec
   // change, so the widget never re-mounts.
   const onMsg = (content, buffers) => {
-    if (content && typeof content.type === "string" && content.type.indexOf("vp_") === 0
-        && typeof inst.updateData === "function") {
+    if (!content || typeof content.type !== "string") return;
+    if (content.type.indexOf("vp_") === 0 && typeof inst.updateData === "function") {
       inst.updateData(content, buffers);   // vp_update / vp_overview / vp_select / vp_noop (+ binary buffers)
+    } else if (content.type === "hl" && typeof inst.setHighlight === "function") {
+      inst.setHighlight(content);          // persistent highlight (mark points)
     }
   };
   model.on("msg:custom", onMsg);
