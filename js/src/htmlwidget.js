@@ -1579,7 +1579,7 @@ HTMLWidgets.widget({
             // worker, no spinner) instead of a full renderValue re-render. The color
             // scale / legend / palette are unchanged, so only x/y/z(/w) move. Channels
             // arrive in the same encoding build_payload produces (base64 here).
-            updateData: function(msg) {
+            updateData: async function(msg) {
                 const entry = globalRegistry.get(plotId);
                 if (!entry || !entry.plot || entry.plot._destroyed || !msg) return;
                 try {
@@ -1629,8 +1629,10 @@ HTMLWidgets.widget({
                     if (W) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z?Z[i]:0, W[i]]; }
                     else if (Z) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z[i]]; }
                     else { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i]]; }
-                    entry.plot.draw(pts);
-                    // re-apply the persisted selection on the freshly drawn points
+                    // AWAIT the draw: plot.draw resolves only after the new points
+                    // (and spatial index) are in place. Selecting before it settles
+                    // applies the indices to the OLD points -> random highlights.
+                    await entry.plot.draw(pts);
                     try {
                         if (_sel.length) entry.plot.select(_sel, { preventEvent: true });
                         else entry.plot.deselect({ preventEvent: true });
