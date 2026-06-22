@@ -857,6 +857,7 @@ HTMLWidgets.widget({
         let d3Available = false;
         let dataBuffers = { x: null, y: null, z: null, w: null };
         let tooltipFields = [];   // hoisted so updateData() can refresh hover fields on a viewport swap
+        let _vpSeq = 0;           // viewport-request sequence; drop stale/out-of-order responses (factory scope so updateData + view handler share it)
         let legendDiv = null;
         let isInitialRender = true;
         let resizeObserver = null;
@@ -1590,6 +1591,10 @@ HTMLWidgets.widget({
                 if (!entry || !entry.plot || entry.plot._destroyed || !msg) return;
                 // Selection-only update (full-region lasso result): apply on the
                 // current points, no redraw.
+                // Drop responses to superseded viewport requests (racing pans/zooms
+                // / a reset) so stale rectangular detail tiles don't clobber the
+                // latest view. vp_select (lasso) carries no seq -> always applies.
+                if (msg.seq != null && msg.seq < _vpSeq) return;
                 if (msg.type === 'vp_select') {
                     const s = Array.isArray(msg.select) ? msg.select : [];
                     entry.selectedIndices = s;
@@ -1951,19 +1956,15 @@ HTMLWidgets.widget({
                         // zoomed-in detail points remain). Then emit so the kernel
                         // re-syncs its draw-order + re-applies the selection.
                         if (xData.detailOnZoom) {
+                            _vpSeq++;   // invalidate any in-flight detail responses first
                             const ent2 = globalRegistry.get(plotId);
                             if (ent2 && ent2._overview && instance && instance.updateData) {
                                 try { instance.updateData({ type: 'vp_overview' }); } catch (e) {}
                             }
                             if (xDomainOrig && yDomainOrig) {
-                                setTimeout(() => {
-                                    try {
-                                        container.dispatchEvent(new CustomEvent('sp-viewport', {
-                                            detail: { plotId: plotId,
-                                                      bounds: [xDomainOrig[0], yDomainOrig[0],
-                                                               xDomainOrig[1], yDomainOrig[1]] },
-                                            bubbles: false }));
-                                    } catch (e) {}
+                                setTimeout(() => {   // re-sync kernel (reuse the bumped seq)
+                                    _emitViewport([xDomainOrig[0], yDomainOrig[0],
+                                                   xDomainOrig[1], yDomainOrig[1]], false);
                                 }, 60);
                             }
                         }
@@ -2243,6 +2244,13 @@ HTMLWidgets.widget({
                 let _lodTimer = null, _lodActive = false;
                 const _lodThreshold = 120000;
                 const _lodOrigSize = (xData.options && xData.options.size) || 3;
+                const _emitViewport = (bounds, bump) => {
+                    if (bump !== false) _vpSeq++;     // bump=false reuses the current seq
+                    try {
+                        container.dispatchEvent(new CustomEvent('sp-viewport',
+                            { detail: { plotId: plotId, bounds: bounds, seq: _vpSeq }, bubbles: false }));
+                    } catch (e) {}
+                };
                 const unsubView = plot.subscribe('view', () => {
                     // Coalesce the (d3) axis redraw to one per animation frame -
                     // calling it on every view event made panning feel laggy.
@@ -2278,10 +2286,7 @@ HTMLWidgets.widget({
                         if (_vpTimer) clearTimeout(_vpTimer);
                         _vpTimer = setTimeout(() => {
                             const b = getViewportBounds();
-                            if (b) try {
-                                container.dispatchEvent(new CustomEvent('sp-viewport',
-                                    { detail: { plotId: plotId, bounds: b }, bubbles: false }));
-                            } catch (err) {}
+                            if (b) _emitViewport(b);
                         }, 350);
                     }
                     if(!globalRegistry.globalSyncEnabled) return;
