@@ -790,7 +790,12 @@ HTMLWidgets.widget({
                 .sp-legend-wrapper.minimized .sp-legend-btn { opacity: 0.75; pointer-events: auto; }
                 .sp-legend-btn:focus, .sp-legend-btn:focus-visible { outline: none; box-shadow: none; }
                 
-                .sp-legend-content { padding: 6px; overflow-y: auto; max-height: 300px; }
+                .sp-legend-content { padding: 6px; overflow-y: auto; max-height: 300px;
+                    scrollbar-width: thin; scrollbar-color: rgba(127,127,127,0.45) transparent; }
+                .sp-legend-content::-webkit-scrollbar { width: 8px; }
+                .sp-legend-content::-webkit-scrollbar-track { background: transparent; }
+                .sp-legend-content::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.45); border-radius: 4px; }
+                .sp-legend-content::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,0.7); }
                 
                 .sp-legend-item { 
                     transition: opacity 0.2s; user-select: none; 
@@ -1813,25 +1818,33 @@ HTMLWidgets.widget({
                 // unless the caller overrides `pixelRatio` or we are in
                 // performanceMode (very large data), where we honour the true
                 // ratio to keep the pixel count down.
+                // Crispness is tied to the backing-store ratio, NOT performanceMode:
+                // supersample (>=2x) up to a few million points so plots look sharp;
+                // only past ~3M drop to the true ratio to keep the per-frame fill
+                // rate (and pan smoothness) reasonable. pixelRatio= overrides.
                 const dpr = (xData.pixelRatio != null)
                     ? xData.pixelRatio
-                    : (xData.performanceMode
+                    : ((xData.n_points || 0) > 3000000
                         ? (window.devicePixelRatio || 1)
                         : Math.max(window.devicePixelRatio || 1, 2));
                 // Share ONE WebGL renderer (context) across every widget on the
                 // page. Browsers cap live WebGL contexts (~16); a new context per
                 // plot/cell exhausts them and triggers context-loss ("GPU Error").
-                // regl-scatterplot supports a shared renderer for exactly this.
                 if (xData.pixelRatio != null) {
-                    // An explicit pixelRatio gets its OWN renderer so the override
-                    // actually applies — the shared renderer's pixelRatio is fixed
-                    // at first creation, so reusing it would ignore the setting.
+                    // An explicit pixelRatio gets its OWN renderer so the override applies.
                     renderer = reglMod.createRenderer({ pixelRatio: dpr });
                 } else {
                     if (!window.__reglSharedRenderer) {
                         window.__reglSharedRenderer = reglMod.createRenderer({ pixelRatio: dpr });
+                        window.__reglSharedRendererDpr = dpr;
                     }
-                    renderer = window.__reglSharedRenderer;
+                    // The shared renderer's pixelRatio is fixed at creation. If THIS
+                    // plot wants a crisper ratio than it was made with (e.g. a small
+                    // plot after a big one), give it a dedicated renderer so it isn't
+                    // stuck soft.
+                    renderer = (dpr > (window.__reglSharedRendererDpr || 0) + 0.01)
+                        ? reglMod.createRenderer({ pixelRatio: dpr })
+                        : window.__reglSharedRenderer;
                 }
                 const intXScale = d3.scaleLinear().domain([-1,1]).range([0,cW]);
                 const intYScale = d3.scaleLinear().domain([-1,1]).range([cH,0]);
