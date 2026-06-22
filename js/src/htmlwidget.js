@@ -259,9 +259,27 @@ function propagateFiltersToGroup(src) {
         if (pid === src.plotId) return;
         const e = globalRegistry.get(pid);
         if (!e || !e.plot || e.plot._destroyed) return;
-        e.indexFilters = new Map(src.indexFilters);
         e.activeStrainers = Object.assign({}, src.activeStrainers);
         e.categorySelections = new Map(src.categorySelections);
+        if (e._overview) {
+            // progressive: panels render DIFFERENT point sets, so src's positional
+            // index-filters point at the wrong cells. Recompute this panel's own
+            // category filters from ITS codes (works when panels share the colour
+            // variable; cross-variable sync isn't possible with subsetted views).
+            e.indexFilters = new Map();
+            e.categorySelections.forEach((sel, varName) => {
+                let buf = null;
+                if (e.colorVar === varName) buf = e.zData;
+                else if (e.groupVar === varName) buf = e.categoryData;
+                if (buf && sel && sel.size) {
+                    const s = new Set(); const n = e.n_points;
+                    for (let p = 0; p < n; p++) if (sel.has(Math.round(buf[p]))) s.add(p);
+                    e.indexFilters.set(varName, s);
+                }
+            });
+        } else {
+            e.indexFilters = new Map(src.indexFilters);   // same cells -> positional copy
+        }
         if (e.updateLegendUI) e.updateLegendUI();
         recalcAndApplyFilters(e);
     });
