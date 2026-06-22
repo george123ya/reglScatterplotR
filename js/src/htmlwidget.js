@@ -1588,6 +1588,15 @@ HTMLWidgets.widget({
             updateData: async function(msg) {
                 const entry = globalRegistry.get(plotId);
                 if (!entry || !entry.plot || entry.plot._destroyed || !msg) return;
+                // Selection-only update (full-region lasso result): apply on the
+                // current points, no redraw.
+                if (msg.type === 'vp_select') {
+                    const s = Array.isArray(msg.select) ? msg.select : [];
+                    entry.selectedIndices = s;
+                    try { s.length ? entry.plot.select(s, { preventEvent: true })
+                                   : entry.plot.deselect({ preventEvent: true }); } catch (e) {}
+                    return;
+                }
                 try {
                     let X, Y, Z, W, n;
                     if (msg.type === 'vp_overview' && entry._overview) {
@@ -2309,6 +2318,25 @@ HTMLWidgets.widget({
                     mirrorToGroup(pl => pl.deselect({ preventEvent: true }));
                 });
                 window.__spUnsubscribers[plotId].push(unsubDeselect);
+
+                // detail-on-zoom: also emit the lasso POLYGON (in data coords) so the
+                // kernel can select EVERY cell inside it on the full dataset, not just
+                // the rendered subset (the plain 'select' above only hits drawn points).
+                if (xData.detailOnZoom) {
+                    const unsubLasso = plot.subscribe('lassoEnd', ({ coordinates }) => {
+                        if (!coordinates || coordinates.length < 3 || !xDomainOrig || !yDomainOrig) return;
+                        const poly = coordinates.map((c) => {
+                            const nx = c[0], ny = c[1];
+                            return [xDomainOrig[0] + (nx + 1) / 2 * (xDomainOrig[1] - xDomainOrig[0]),
+                                    yDomainOrig[0] + (ny + 1) / 2 * (yDomainOrig[1] - yDomainOrig[0])];
+                        });
+                        try {
+                            container.dispatchEvent(new CustomEvent('sp-lasso',
+                                { detail: { plotId: plotId, polygon: poly }, bubbles: false }));
+                        } catch (e) {}
+                    });
+                    window.__spUnsubscribers[plotId].push(unsubLasso);
+                }
 
                 // crosstalk: link selection + filtering with other crosstalk
                 // widgets (DT, plotly, leaflet) sharing the same group.

@@ -79,6 +79,13 @@ function mount(el, model) {
   };
   container.addEventListener("sp-viewport", onViewport);
 
+  // Full-region lasso: the polygon goes to the kernel, which selects every cell
+  // inside it on the full dataset (not just the drawn subset).
+  const onLasso = (ev) => {
+    try { model.send({ type: "lasso", polygon: ev.detail.polygon }); } catch (e) {}
+  };
+  container.addEventListener("sp-lasso", onLasso);
+
   // Kernel pushes new in-view points (detail-on-zoom) -> swap them on the existing
   // plot via plot.draw (no re-render / no spinner). A custom message, NOT a _spec
   // change, so the widget never re-mounts.
@@ -105,6 +112,7 @@ function mount(el, model) {
     ro.disconnect();
     container.removeEventListener("sp-selection", onSel);
     container.removeEventListener("sp-viewport", onViewport);
+    container.removeEventListener("sp-lasso", onLasso);
     model.off("msg:custom", onMsg);
     model.off("change:_selection", onModelSel);
     container.remove();
