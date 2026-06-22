@@ -858,6 +858,7 @@ HTMLWidgets.widget({
         let dataBuffers = { x: null, y: null, z: null, w: null };
         let tooltipFields = [];   // hoisted so updateData() can refresh hover fields on a viewport swap
         let _vpSeq = 0;           // viewport-request sequence; drop stale/out-of-order responses (factory scope so updateData + view handler share it)
+        let _vpLoadTimer = null;  // delayed "loading detail" indicator for viewport fetches
         let legendDiv = null;
         let isInitialRender = true;
         let resizeObserver = null;
@@ -1679,6 +1680,8 @@ HTMLWidgets.widget({
                     } catch (e) {}
                     if (typeof recalcAndApplyFilters === 'function') recalcAndApplyFilters(entry);
                     if (entry.updateLegendUI) entry.updateLegendUI();
+                    if (_vpLoadTimer) { clearTimeout(_vpLoadTimer); _vpLoadTimer = null; }
+                    try { loader.style.display = 'none'; } catch (e) {}   // detail fetch done
                 } catch (e) { console.error('[reglScatterplot] updateData failed', e); }
             },
             renderValue: async function(xData) {
@@ -2246,6 +2249,9 @@ HTMLWidgets.widget({
                 const _lodOrigSize = (xData.options && xData.options.size) || 3;
                 const _emitViewport = (bounds, bump) => {
                     if (bump !== false) _vpSeq++;     // bump=false reuses the current seq
+                    // show the loader if the fetch is slow (delayed so fast ones don't flash)
+                    if (_vpLoadTimer) clearTimeout(_vpLoadTimer);
+                    _vpLoadTimer = setTimeout(() => { try { loader.innerHTML = ''; loader.style.display = 'block'; } catch (e) {} }, 350);
                     try {
                         container.dispatchEvent(new CustomEvent('sp-viewport',
                             { detail: { plotId: plotId, bounds: bounds, seq: _vpSeq }, bubbles: false }));
