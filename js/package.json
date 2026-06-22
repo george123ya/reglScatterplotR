@@ -6,10 +6,12 @@
   "description": "Build sources for the reglScatterplot widget (R htmlwidget + Python anywidget). All browser deps are bundled locally - no CDN at runtime.",
   "scripts": {
     "build": "node build.mjs",
-    "watch": "node build.mjs --watch"
+    "watch": "node build.mjs --watch",
+    "postinstall": "patch-package"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",
+    "patch-package": "^8.0.1",
     "puppeteer-core": "^25.1.0"
   },
   "dependencies": {

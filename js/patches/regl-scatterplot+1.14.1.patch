@@ -1,0 +1,76 @@
+diff --git a/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js b/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
+index 53a1937..d53355f 100644
+--- a/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
++++ b/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
+@@ -5054,6 +5054,10 @@ const FRAGMENT_SHADER = `
+ precision highp float;
+ 
+ uniform float antiAliasing;
++uniform float spOutlineW;
++uniform float spGapW;
++uniform vec3 spOutlineColor;
++uniform vec3 spGapColor;
+ 
+ varying vec4 color;
+ varying float finalPointSize;
+@@ -5064,10 +5068,18 @@ float linearstep(float edge0, float edge1, float x) {
+ 
+ void main() {
+   vec2 c = gl_PointCoord * 2.0 - 1.0;
+-  float sdf = length(c) * finalPointSize;
++  float r = length(c);
++  float sdf = r * finalPointSize;
+   float alpha = linearstep(finalPointSize + antiAliasing, finalPointSize - antiAliasing, sdf);
+ 
+-  gl_FragColor = vec4(color.rgb, alpha * color.a);
++  vec3 rgb = color.rgb;
++  if (spOutlineW > 0.0) {                 // scanpy-style add_outline (sp- patch)
++    float rOut = 1.0 - spOutlineW;        // outer band = outline colour
++    float rGap = rOut - spGapW;           // inner band = gap (background) colour
++    if (r >= rOut) rgb = spOutlineColor;
++    else if (r >= rGap) rgb = spGapColor;
++  }
++  gl_FragColor = vec4(rgb, alpha * color.a);
+ }
+ `;
+ 
+@@ -6878,6 +6890,13 @@ const createScatterplot = (
+   };
+ 
+   const getAntiAliasing = () => antiAliasing;
++  // scanpy-style per-point outline (sp- patch). State + getters; set via
++  // scatterplot.set({ spOutline: { width, gap, color, gapColor } }).
++  const spOutline = { width: 0, gap: 0.06, color: [0, 0, 0], gapColor: [1, 1, 1] };
++  const getSpOutlineW = () => spOutline.width;
++  const getSpGapW = () => spOutline.gap;
++  const getSpOutlineColor = () => spOutline.color;
++  const getSpGapColor = () => spOutline.gapColor;
+   const getResolution = () => [canvas.width, canvas.height];
+   const getBackgroundImage = () => backgroundImage;
+   const getColorTex = () => colorTex;
+@@ -7048,6 +7067,10 @@ const createScatterplot = (
+ 
+       uniforms: {
+         antiAliasing: getAntiAliasing,
++        spOutlineW: getSpOutlineW,
++        spGapW: getSpGapW,
++        spOutlineColor: getSpOutlineColor,
++        spGapColor: getSpGapColor,
+         resolution: getResolution,
+         modelViewProjection: getModelViewProjection,
+         devicePixelRatio: getDevicePixelRatio,
+@@ -9383,6 +9406,14 @@ const createScatterplot = (
+       setAntiAliasing(properties.antiAliasing);
+     }
+ 
++    if (properties.spOutline !== undefined) {       // sp- patch: scanpy-style outline
++      const o = properties.spOutline || {};
++      if (o.width !== undefined) spOutline.width = +o.width || 0;
++      if (o.gap !== undefined) spOutline.gap = +o.gap || 0;
++      if (Array.isArray(o.color)) spOutline.color = o.color;
++      if (Array.isArray(o.gapColor)) spOutline.gapColor = o.gapColor;
++    }
++
+     if (properties.pixelAligned !== undefined) {
+       setPixelAligned(properties.pixelAligned);
+     }

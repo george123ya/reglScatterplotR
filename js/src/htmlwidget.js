@@ -2003,6 +2003,17 @@ HTMLWidgets.widget({
                         }
                     }
                     if (initialView) newConf.cameraView = initialView;
+                    // scanpy-style add_outline: a dark ring + background gap around
+                    // each point (drawn in the patched point shader -> single pass,
+                    // no extra points / no perf cost). Colours arrive normalised 0..1.
+                    if (xData.addOutline) {
+                        newConf.spOutline = {
+                            width: (xData.outlineWidth != null ? xData.outlineWidth : 0.25),
+                            gap: (xData.outlineGap != null ? xData.outlineGap : 0.06),
+                            color: xData.outlineColor || [0, 0, 0],
+                            gapColor: xData.outlineGapColor || [1, 1, 1],
+                        };
+                    }
                     plot.set(newConf);
                     if (xData.autoFit && !initialView) plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: false });
                     const points = new Array(n);
