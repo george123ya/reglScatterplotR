@@ -1594,7 +1594,11 @@ HTMLWidgets.widget({
                 // the axis text was invisible on dark themes.
                 currentAxisColor = xData.axisColor || '#333333';
 
-                loader.style.display = 'block';
+                // Show the spinner only if rendering is genuinely slow (a big
+                // initial load) via a delayed show, so fast re-renders (e.g.
+                // detail-on-zoom viewport refreshes) never flash a loading circle.
+                loader.innerHTML = '';
+                const _loaderTimer = setTimeout(() => { loader.style.display = 'block'; }, 450);
                 if (!Array.isArray(xData.gene_names)) xData.gene_names = [];
 
                 // Prefer the caller's logical plotId: it's the id used by
@@ -1803,10 +1807,13 @@ HTMLWidgets.widget({
                     await plot.draw(points);
                 } catch (err) {
                     console.error("[SP-ERROR] Plot render failed (Context Lost?):", err);
+                    clearTimeout(_loaderTimer);
                     loader.innerHTML = "⚠️ GPU Error (Try Refreshing)";
-                    return; 
+                    loader.style.display = 'block';
+                    return;
                 }
-                
+
+                clearTimeout(_loaderTimer);
                 loader.style.display = 'none';
 
                 // --- interaction niceties (added once) --------------------
