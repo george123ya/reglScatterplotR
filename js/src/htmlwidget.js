@@ -1587,7 +1587,7 @@ HTMLWidgets.widget({
             // worker, no spinner) instead of a full renderValue re-render. The color
             // scale / legend / palette are unchanged, so only x/y/z(/w) move. Channels
             // arrive in the same encoding build_payload produces (base64 here).
-            updateData: async function(msg) {
+            updateData: async function(msg, buffers) {
                 const entry = globalRegistry.get(plotId);
                 if (!entry || !entry.plot || entry.plot._destroyed || !msg) return;
                 // Selection-only update (full-region lasso result): apply on the
@@ -1624,12 +1624,18 @@ HTMLWidgets.widget({
                         const lt = entry.legend && entry.legend.var_type;
                         const zmode = lt === 'categorical' ? 'u16i'
                                     : (lt === 'continuous' ? 'u16u' : 'f32');
-                        X = decodeChannel(msg.x, 'u16');
-                        Y = decodeChannel(msg.y, 'u16');
-                        Z = msg.z ? decodeChannel(msg.z, zmode) : null;
-                        W = msg.w ? decodeChannel(msg.w, 'u16u') : null;
+                        // channels arrive as raw binary comm buffers (no base64),
+                        // ordered by msg.buf_order
+                        const order = msg.buf_order || [];
+                        const ch = (k, mode) => {
+                            const i = order.indexOf(k);
+                            return (i >= 0 && buffers && buffers[i] != null)
+                                ? decodeChannel(buffers[i], mode) : null;
+                        };
+                        X = ch('x', 'u16'); Y = ch('y', 'u16');
+                        Z = ch('z', zmode); W = ch('w', 'u16u');
                         n = msg.n_points;
-                        if (Z && Z.length > X.length) Z = Z.subarray(0, X.length);
+                        if (Z && X && Z.length > X.length) Z = Z.subarray(0, X.length);
                         if (msg.group_data) entry.categoryData = decodeBase64(msg.group_data);
                         // refresh hover fields + filter ranges for the new in-view cells
                         if (Array.isArray(msg.tooltip_data)) {
