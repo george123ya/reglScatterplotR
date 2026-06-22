@@ -1596,6 +1596,13 @@ HTMLWidgets.widget({
                 // / a reset) so stale rectangular detail tiles don't clobber the
                 // latest view. vp_select (lasso) carries no seq -> always applies.
                 if (msg.seq != null && msg.seq < _vpSeq) return;
+                // no-op: the kernel had nothing new to draw (fetch skipped/covered) —
+                // just clear the loading indicator so it never gets stuck on.
+                if (msg.type === 'vp_noop') {
+                    if (_vpLoadTimer) { clearTimeout(_vpLoadTimer); _vpLoadTimer = null; }
+                    try { loader.style.display = 'none'; } catch (e) {}
+                    return;
+                }
                 if (msg.type === 'vp_select') {
                     const s = Array.isArray(msg.select) ? msg.select : [];
                     entry.selectedIndices = s;
