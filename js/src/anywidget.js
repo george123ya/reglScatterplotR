@@ -79,6 +79,16 @@ function mount(el, model) {
   };
   container.addEventListener("sp-viewport", onViewport);
 
+  // Kernel pushes new in-view points (detail-on-zoom) -> swap them on the existing
+  // plot via plot.draw (no re-render / no spinner). A custom message, NOT a _spec
+  // change, so the widget never re-mounts.
+  const onMsg = (content) => {
+    if (content && content.type === "vp_update" && typeof inst.updateData === "function") {
+      inst.updateData(content);
+    }
+  };
+  model.on("msg:custom", onMsg);
+
   const onModelSel = () => {
     if (typeof inst.setSelection !== "function") return;
     applyingFromModel = true;
@@ -95,6 +105,7 @@ function mount(el, model) {
     ro.disconnect();
     container.removeEventListener("sp-selection", onSel);
     container.removeEventListener("sp-viewport", onViewport);
+    model.off("msg:custom", onMsg);
     model.off("change:_selection", onModelSel);
     container.remove();
   };

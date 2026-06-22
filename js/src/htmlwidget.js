@@ -1574,6 +1574,34 @@ HTMLWidgets.widget({
         };
 
         const instance = {
+            // Lightweight data swap for detail-on-zoom: update the points on the
+            // EXISTING plot via plot.draw (no destroy/recreate, no new spatial-index
+            // worker, no spinner) instead of a full renderValue re-render. The color
+            // scale / legend / palette are unchanged, so only x/y/z(/w) move. Channels
+            // arrive in the same encoding build_payload produces (base64 here).
+            updateData: function(msg) {
+                const entry = globalRegistry.get(plotId);
+                if (!entry || !entry.plot || entry.plot._destroyed || !msg) return;
+                try {
+                    const lt = entry.legend && entry.legend.var_type;
+                    const zmode = lt === 'categorical' ? 'u16i'
+                                : (lt === 'continuous' ? 'u16u' : 'f32');
+                    const X = decodeChannel(msg.x, 'u16');
+                    const Y = decodeChannel(msg.y, 'u16');
+                    let Z = msg.z ? decodeChannel(msg.z, zmode) : null;
+                    const W = msg.w ? decodeChannel(msg.w, 'u16u') : null;
+                    const n = msg.n_points;
+                    if (Z && Z.length > X.length) Z = Z.subarray(0, X.length);
+                    entry.xData = X; entry.yData = Y; entry.zData = Z; entry.n_points = n;
+                    if (msg.group_data) entry.categoryData = decodeBase64(msg.group_data);
+                    const pts = new Array(n);
+                    if (W) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z?Z[i]:0, W[i]]; }
+                    else if (Z) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z[i]]; }
+                    else { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i]]; }
+                    entry.plot.draw(pts);
+                    if (typeof recalcAndApplyFilters === 'function') recalcAndApplyFilters(entry);
+                } catch (e) { console.error('[reglScatterplot] updateData failed', e); }
+            },
             renderValue: async function(xData) {
                 lastXData = xData;   // remembered so we can re-render after a WebGL context loss
                 if (typeof xData.syncState !== 'undefined') {
