@@ -1605,8 +1605,12 @@ HTMLWidgets.widget({
                 plotId = xData.plotId || el.id || ('plot_' + Math.random().toString(36).substr(2, 9));
                 
                 cleanUpZombies();
+                let prevCam = null;
                 const selfEntry = globalRegistry.get(plotId);
                 if (selfEntry && selfEntry.plot && !selfEntry.plot._destroyed) {
+                    // Keep the current view across an in-place re-render (e.g. the
+                    // progressive subset -> full swap) so it doesn't jump back.
+                    try { prevCam = cloneCamera(selfEntry.plot.get('cameraView')); } catch(e) {}
                     try {
                         selfEntry.plot.destroy();
                     } catch(e) {}
@@ -1618,7 +1622,7 @@ HTMLWidgets.widget({
                 }
                 if (!window.__spUnsubscribers[plotId]) window.__spUnsubscribers[plotId] = [];
 
-                let initialView = null;
+                let initialView = prevCam;
                 const existingEntry = globalRegistry.get(plotId);
                 if (xData.masterId) {
                     const masterEntry = globalRegistry.get(xData.masterId);
