@@ -848,7 +848,7 @@ HTMLWidgets.widget({
 
         let plot, renderer, svg, xAxisG, yAxisG, xAxis, yAxis, xScale, yScale;
         let lastXData = null;   // last spec, for re-rendering after context loss
-        let xDomainOrig, yDomainOrig, tooltip, titleDiv;
+        let xDomainOrig, yDomainOrig, tooltip, titleDiv, captionDiv;
         let d3Available = false;
         let dataBuffers = { x: null, y: null, z: null, w: null };
         let legendDiv = null;
@@ -1911,6 +1911,25 @@ HTMLWidgets.widget({
                     titleDiv.style.display = 'block';
                 } else if (titleDiv) {
                     titleDiv.style.display = 'none';
+                }
+
+                // Honest subsample note (e.g. "500,000 of 10,000,000 shown") so a
+                // downsampled plot never looks like it's showing every point.
+                if (xData.caption) {
+                    if (!captionDiv) {
+                        captionDiv = document.createElement('div');
+                        captionDiv.className = 'sp-plot-caption';
+                        captionDiv.style.cssText = 'position:absolute; bottom:4px; right:8px; ' +
+                            'pointer-events:none; z-index:40; opacity:0.6; ' +
+                            'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,Arial,sans-serif;';
+                        container.appendChild(captionDiv);
+                    }
+                    captionDiv.textContent = xData.caption;
+                    captionDiv.style.color = xData.axisColor || '#333333';
+                    captionDiv.style.fontSize = Math.max(9, (xData.fontSize || 12) - 2) + 'px';
+                    captionDiv.style.display = 'block';
+                } else if (captionDiv) {
+                    captionDiv.style.display = 'none';
                 }
 
                 // The current view as ORIGINAL data-coordinate bounds
