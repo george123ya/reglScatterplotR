@@ -1,5 +1,5 @@
 diff --git a/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js b/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
-index 53a1937..9270e14 100644
+index 53a1937..91b685c 100644
 --- a/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
 +++ b/node_modules/regl-scatterplot/dist/regl-scatterplot.esm.js
 @@ -5054,6 +5054,10 @@ const FRAGMENT_SHADER = `
@@ -34,15 +34,17 @@ index 53a1937..9270e14 100644
  }
  `;
  
-@@ -5688,6 +5700,7 @@ const createScatterplot = (
+@@ -5688,6 +5700,9 @@ const createScatterplot = (
    let mouseDownTimeout = -1;
    /** @type{number[]} */
    let selectedPoints = [];
 +  let highlightPoints = [];   // sp- patch: persistent highlight (survives deselect/lasso)
++  let outlineAllPoints = false;   // sp- patch: scanpy add_outline (ring on EVERY point)
++  let outlineAllWidth = 2;
    /** @type{Set<number>} */
    const selectedPointsSet = new Set();
    /** @type{Set<number>} */
-@@ -5844,6 +5857,7 @@ const createScatterplot = (
+@@ -5844,6 +5859,7 @@ const createScatterplot = (
    let stateTexEps = 0; // Half a texel
    let normalPointsIndexBuffer; // Buffer holding the indices pointing to the correct texel
    let selectedPointsIndexBuffer; // Used for pointing to the selected texels
@@ -50,7 +52,7 @@ index 53a1937..9270e14 100644
    let hoveredPointIndexBuffer; // Used for pointing to the hovered texels
  
    let cameraZoomTargetStart; // Stores the start (i.e., current) camera target for zooming
-@@ -6878,6 +6892,13 @@ const createScatterplot = (
+@@ -6878,6 +6894,13 @@ const createScatterplot = (
    };
  
    const getAntiAliasing = () => antiAliasing;
@@ -64,7 +66,7 @@ index 53a1937..9270e14 100644
    const getResolution = () => [canvas.width, canvas.height];
    const getBackgroundImage = () => backgroundImage;
    const getColorTex = () => colorTex;
-@@ -6922,6 +6943,22 @@ const createScatterplot = (
+@@ -6922,6 +6945,22 @@ const createScatterplot = (
    const getNormalNumPoints = () =>
      isPointsFiltered ? filteredPointsSet.size : numPoints;
    const getSelectedNumPoints = () => selectedPoints.length;
@@ -87,7 +89,7 @@ index 53a1937..9270e14 100644
    const getPointOpacityMaxBase = () =>
      getSelectedNumPoints() > 0 ? opacityInactiveMax : 1;
    const getPointOpacityScaleBase = () =>
-@@ -7048,6 +7085,10 @@ const createScatterplot = (
+@@ -7048,6 +7087,10 @@ const createScatterplot = (
  
        uniforms: {
          antiAliasing: getAntiAliasing,
@@ -98,7 +100,7 @@ index 53a1937..9270e14 100644
          resolution: getResolution,
          modelViewProjection: getModelViewProjection,
          devicePixelRatio: getDevicePixelRatio,
-@@ -7135,6 +7176,39 @@ const createScatterplot = (
+@@ -7135,6 +7178,63 @@ const createScatterplot = (
      drawSelectedPointBodies();
    };
  
@@ -135,10 +137,34 @@ index 53a1937..9270e14 100644
 +    drawHighlightPointBodies();
 +  };
 +
++  // sp- patch: scanpy-style add_outline for EVERY point — outer ring (active colour)
++  // + inner gap (background) drawn larger than, and BEHIND, the normal bodies. Same
++  // crisp antialiased engine ring as the selection; 2 extra full-cloud passes.
++  const drawAllOutlineOuter = drawPoints(
++    () => (outlineAllWidth * 2) * window.devicePixelRatio,
++    getNormalNumPoints,
++    getNormalPointsIndexBuffer,
++    COLOR_ACTIVE_IDX,
++    () => 1,
++    () => 1,
++  );
++  const drawAllOutlineInner = drawPoints(
++    () => outlineAllWidth * window.devicePixelRatio,
++    getNormalNumPoints,
++    getNormalPointsIndexBuffer,
++    COLOR_BG_IDX,
++    () => 1,
++    () => 1,
++  );
++  const drawAllOutline = () => {
++    drawAllOutlineOuter();
++    drawAllOutlineInner();
++  };
++
    const drawBackgroundImage = renderer.regl({
      frag: FRAGMENT_SHADER$2,
      vert: VERTEX_SHADER,
-@@ -9383,6 +9457,18 @@ const createScatterplot = (
+@@ -9383,6 +9483,28 @@ const createScatterplot = (
        setAntiAliasing(properties.antiAliasing);
      }
  
@@ -154,10 +180,20 @@ index 53a1937..9270e14 100644
 +      setHighlightPoints(properties.highlightPoints);
 +    }
 +
++    if (properties.outlineAllPoints !== undefined) {  // sp- patch: scanpy add_outline
++      outlineAllPoints = !!properties.outlineAllPoints;
++      draw = true;
++    }
++
++    if (properties.outlineAllWidth !== undefined) {
++      outlineAllWidth = Math.max(0, +properties.outlineAllWidth || 0);
++      draw = true;
++    }
++
      if (properties.pixelAligned !== undefined) {
        setPixelAligned(properties.pixelAligned);
      }
-@@ -9669,6 +9755,7 @@ const createScatterplot = (
+@@ -9669,6 +9791,7 @@ const createScatterplot = (
      // Buffers
      normalPointsIndexBuffer = renderer.regl.buffer();
      selectedPointsIndexBuffer = renderer.regl.buffer();
@@ -165,7 +201,15 @@ index 53a1937..9270e14 100644
      hoveredPointIndexBuffer = renderer.regl.buffer({
        usage: 'dynamic',
        type: 'float',
-@@ -9768,6 +9855,10 @@ const createScatterplot = (
+@@ -9757,6 +9880,7 @@ const createScatterplot = (
+ 
+       const numPoints = getNormalNumPoints();
+       if (isPointsDrawn && numPoints > 0) {
++        if (outlineAllPoints) drawAllOutline();   // sp- patch: ring behind every body
+         drawPointBodies();
+       }
+ 
+@@ -9768,6 +9892,10 @@ const createScatterplot = (
          drawHoveredPoint();
        }
  

@@ -2003,16 +2003,13 @@ HTMLWidgets.widget({
                         }
                     }
                     if (initialView) newConf.cameraView = initialView;
-                    // scanpy-style add_outline: a dark ring + background gap around
-                    // each point (drawn in the patched point shader -> single pass,
-                    // no extra points / no perf cost). Colours arrive normalised 0..1.
+                    // scanpy-style add_outline: a crisp ring + background gap behind
+                    // every point, using the engine's antialiased outline passes (the
+                    // same look as a selection). outlineColor = the outer-ring colour.
                     if (xData.addOutline) {
-                        newConf.spOutline = {
-                            width: (xData.outlineWidth != null ? xData.outlineWidth : 0.25),
-                            gap: (xData.outlineGap != null ? xData.outlineGap : 0.06),
-                            color: xData.outlineColor || [0, 0, 0],
-                            gapColor: xData.outlineGapColor || [1, 1, 1],
-                        };
+                        newConf.outlineAllPoints = true;
+                        if (xData.outlineAllWidth != null) newConf.outlineAllWidth = xData.outlineAllWidth;
+                        if (xData.outlineColor) newConf.pointColorActive = xData.outlineColor;
                     }
                     plot.set(newConf);
                     if (xData.autoFit && !initialView) plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: false });
