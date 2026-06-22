@@ -1945,19 +1945,27 @@ HTMLWidgets.widget({
                         } else {
                             plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: true });
                         }
-                        // detail-on-zoom: a programmatic reset may not emit a 'view'
-                        // event, so force the overview to re-load — otherwise only the
-                        // zoomed-in detail points remain (a tiny cluster, rest empty).
-                        if (xData.detailOnZoom && xDomainOrig && yDomainOrig) {
-                            setTimeout(() => {
-                                try {
-                                    container.dispatchEvent(new CustomEvent('sp-viewport', {
-                                        detail: { plotId: plotId,
-                                                  bounds: [xDomainOrig[0], yDomainOrig[0],
-                                                           xDomainOrig[1], yDomainOrig[1]] },
-                                        bubbles: false }));
-                                } catch (e) {}
-                            }, 60);
+                        // detail-on-zoom: redraw the cached overview RIGHT NOW (robust —
+                        // a programmatic reset may not emit a 'view' event, and the
+                        // emit->kernel->snap-back chain can race; without this only the
+                        // zoomed-in detail points remain). Then emit so the kernel
+                        // re-syncs its draw-order + re-applies the selection.
+                        if (xData.detailOnZoom) {
+                            const ent2 = globalRegistry.get(plotId);
+                            if (ent2 && ent2._overview && instance && instance.updateData) {
+                                try { instance.updateData({ type: 'vp_overview' }); } catch (e) {}
+                            }
+                            if (xDomainOrig && yDomainOrig) {
+                                setTimeout(() => {
+                                    try {
+                                        container.dispatchEvent(new CustomEvent('sp-viewport', {
+                                            detail: { plotId: plotId,
+                                                      bounds: [xDomainOrig[0], yDomainOrig[0],
+                                                               xDomainOrig[1], yDomainOrig[1]] },
+                                            bubbles: false }));
+                                    } catch (e) {}
+                                }, 60);
+                            }
                         }
                     } catch (err) {}
                 };
