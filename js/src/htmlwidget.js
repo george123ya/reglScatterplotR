@@ -1835,10 +1835,31 @@ HTMLWidgets.widget({
                         curFixed = v;
                         try { plot.set({ cameraIsFixed: v }); } catch (err) {}
                     };
+                    // Transient hint shown when the user scrolls without a modifier
+                    // (they probably expected scroll-to-zoom). Teaches Ctrl/Cmd+scroll.
+                    const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+                    let hint = null, hintTimer = null;
+                    const showZoomHint = () => {
+                        if (!hint) {
+                            hint = document.createElement('div');
+                            hint.textContent = (isMac ? '⌘' : 'Ctrl') + ' + scroll to zoom';
+                            hint.style.cssText = 'position:absolute; bottom:8px; left:50%; ' +
+                                'transform:translateX(-50%); z-index:60; pointer-events:none; ' +
+                                'background:rgba(0,0,0,0.72); color:#fff; font-size:11px; ' +
+                                'padding:3px 9px; border-radius:10px; opacity:0; ' +
+                                'transition:opacity 0.15s; font-family:-apple-system,' +
+                                'BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;';
+                            container.appendChild(hint);
+                        }
+                        hint.style.opacity = '1';
+                        clearTimeout(hintTimer);
+                        hintTimer = setTimeout(() => { if (hint) hint.style.opacity = '0'; }, 1100);
+                    };
                     container.addEventListener('wheel', (e) => {
                         const zoom = e.ctrlKey || e.metaKey;
                         setFixed(!zoom);            // plain -> fixed (no zoom); ctrl -> zoom
                         if (zoom) return;
+                        showZoomHint();
                         // Live widget: the camera being fixed means regl doesn't
                         // preventDefault, so the notebook scrolls natively. The STATIC
                         // render is an <iframe> that LATCHES a wheel gesture started on
