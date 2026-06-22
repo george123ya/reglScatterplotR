@@ -1603,13 +1603,14 @@ HTMLWidgets.widget({
                     }
                     entry.xData = X; entry.yData = Y; entry.zData = Z; entry.n_points = n;
 
-                    // A viewport swap invalidates POSITIONAL state. Clear the lasso
-                    // selection (its indices point into the OLD point set -> would
-                    // highlight random cells), and RECOMPUTE the categorical legend
-                    // filters from the new per-point codes (the chosen categories
-                    // persist; their index sets must be rebuilt or they mis-filter).
-                    try { entry.plot.deselect({ preventEvent: false }); } catch (e) {}
-                    entry.selectedIndices = [];
+                    // A viewport swap invalidates POSITIONAL state. The kernel
+                    // re-maps the persistent selection to the new in-view positions
+                    // (msg.select), applied AFTER the draw below. RECOMPUTE the
+                    // categorical legend filters from the new per-point codes (chosen
+                    // categories persist; their index sets must be rebuilt here or
+                    // they mis-filter).
+                    const _sel = Array.isArray(msg.select) ? msg.select : [];
+                    entry.selectedIndices = _sel;
                     if (entry.indexFilters && entry.categorySelections) {
                         entry.indexFilters.clear();
                         entry.categorySelections.forEach((sel, varName) => {
@@ -1629,6 +1630,11 @@ HTMLWidgets.widget({
                     else if (Z) { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i], Z[i]]; }
                     else { for (let i=0;i<n;i++) pts[i] = [X[i], Y[i]]; }
                     entry.plot.draw(pts);
+                    // re-apply the persisted selection on the freshly drawn points
+                    try {
+                        if (_sel.length) entry.plot.select(_sel, { preventEvent: true });
+                        else entry.plot.deselect({ preventEvent: true });
+                    } catch (e) {}
                     if (typeof recalcAndApplyFilters === 'function') recalcAndApplyFilters(entry);
                     if (entry.updateLegendUI) entry.updateLegendUI();
                 } catch (e) { console.error('[reglScatterplot] updateData failed', e); }
