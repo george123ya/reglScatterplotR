@@ -1818,13 +1818,9 @@ HTMLWidgets.widget({
                 // unless the caller overrides `pixelRatio` or we are in
                 // performanceMode (very large data), where we honour the true
                 // ratio to keep the pixel count down.
-                // Crispness is tied to the backing-store ratio, NOT performanceMode:
-                // supersample (>=2x) up to a few million points so plots look sharp;
-                // only past ~3M drop to the true ratio to keep the per-frame fill
-                // rate (and pan smoothness) reasonable. pixelRatio= overrides.
                 const dpr = (xData.pixelRatio != null)
                     ? xData.pixelRatio
-                    : ((xData.n_points || 0) > 3000000
+                    : (xData.performanceMode
                         ? (window.devicePixelRatio || 1)
                         : Math.max(window.devicePixelRatio || 1, 2));
                 // Share ONE WebGL renderer (context) across every widget on the
@@ -1836,15 +1832,8 @@ HTMLWidgets.widget({
                 } else {
                     if (!window.__reglSharedRenderer) {
                         window.__reglSharedRenderer = reglMod.createRenderer({ pixelRatio: dpr });
-                        window.__reglSharedRendererDpr = dpr;
                     }
-                    // The shared renderer's pixelRatio is fixed at creation. If THIS
-                    // plot wants a crisper ratio than it was made with (e.g. a small
-                    // plot after a big one), give it a dedicated renderer so it isn't
-                    // stuck soft.
-                    renderer = (dpr > (window.__reglSharedRendererDpr || 0) + 0.01)
-                        ? reglMod.createRenderer({ pixelRatio: dpr })
-                        : window.__reglSharedRenderer;
+                    renderer = window.__reglSharedRenderer;
                 }
                 const intXScale = d3.scaleLinear().domain([-1,1]).range([0,cW]);
                 const intYScale = d3.scaleLinear().domain([-1,1]).range([cH,0]);
