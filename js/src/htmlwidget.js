@@ -1821,11 +1821,16 @@ HTMLWidgets.widget({
                 // pixel_ratio override: regl-scatterplot reads window.devicePixelRatio
                 // directly (and ignores the pixelRatio we pass), so the ONLY way to
                 // render crisper than the device (e.g. browser zoomed < 100%, dpr < 1)
-                // is to raise the global ratio. Opt-in (pixel_ratio=) + increase-only.
-                // NOTE: page-global side effect — every canvas renders at this ratio.
+                // is to raise the global ratio. It's page-global, so to avoid a STICKY
+                // ratio (forcing 2x once would keep every later plot supersampled =>
+                // laggy), restore native FIRST, then re-apply only if THIS plot asks.
+                if (window.__reglDprForced) {
+                    try { delete window.devicePixelRatio; } catch (e) {}
+                    window.__reglDprForced = null;
+                }
                 if (xData.pixelRatio != null) {
                     const _t = Number(xData.pixelRatio);
-                    if (_t > (window.devicePixelRatio || 1) && window.__reglDprForced !== _t) {
+                    if (_t > (window.devicePixelRatio || 1)) {
                         try {
                             Object.defineProperty(window, 'devicePixelRatio',
                                 { configurable: true, get: () => _t });
