@@ -123,6 +123,15 @@ function mount(el, model) {
   };
   container.addEventListener("sp-legendfilter", onLegendFilter);
 
+  // Progressive deselect: clear the kernel's logical selection in-band (FIFO with
+  // viewport messages) and push a clearing vp_select [] to every linked panel, so a
+  // queued pan/zoom can't re-apply the just-cleared selection.
+  const onDeselect = () => {
+    try { model.send({ type: "deselect" }); } catch (e) {}
+    bumpGen();
+  };
+  container.addEventListener("sp-deselect", onDeselect);
+
   // Kernel pushes new in-view points (detail-on-zoom) -> swap them on the existing
   // plot via plot.draw (no re-render / no spinner). A custom message, NOT a _spec
   // change, so the widget never re-mounts.
@@ -156,6 +165,7 @@ function mount(el, model) {
     container.removeEventListener("sp-viewport", onViewport);
     container.removeEventListener("sp-lasso", onLasso);
     container.removeEventListener("sp-legendfilter", onLegendFilter);
+    container.removeEventListener("sp-deselect", onDeselect);
     model.off("msg:custom", onMsg);
     model.off("change:_selection", onModelSel);
     container.remove();

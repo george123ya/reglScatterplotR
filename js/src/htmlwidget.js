@@ -2615,6 +2615,14 @@ HTMLWidgets.widget({
                 const unsubDeselect = plot.subscribe('deselect', () => {
                     reportSelection([]);
                     mirrorToGroup(pl => pl.deselect({ preventEvent: true }));
+                    // progressive: ALSO clear the kernel's logical selection in-band
+                    // (same FIFO channel as viewport messages), dispatched LAST so the
+                    // kernel's clearing vp_select [] arrives after any queued pan/zoom's
+                    // re-highlight -> a deselect can't be undone by a stale viewport.
+                    if (xData.detailOnZoom) {
+                        try { container.dispatchEvent(new CustomEvent('sp-deselect',
+                            { detail: { plotId: plotId }, bubbles: false })); } catch (e) {}
+                    }
                 });
                 window.__spUnsubscribers[plotId].push(unsubDeselect);
 
