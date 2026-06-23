@@ -178,8 +178,9 @@ function recalcAndApplyFilters(entry) {
 
     // If NO constraints anywhere, unfilter
     if (!hasServerFilter && !hasStrainers && !hasCatFilters) {
-        entry.plot.unfilter({ transition: 0 }); 
+        entry.plot.unfilter({ transition: 0 });
         if (window.Shiny && entry.plotId === 'p1') window.Shiny.setInputValue("filtered_count", n);
+        if (entry.reportFilter) entry.reportFilter(null);   // no filter -> w.filtered is None
         return;
     }
 
@@ -243,16 +244,39 @@ function recalcAndApplyFilters(entry) {
     }
     
     entry.plot.filter(indices, { transition: 0 });
-    
+
     if (window.Shiny && entry.plotId === 'p1') {
          window.Shiny.setInputValue("filtered_count", indices.length);
     }
+    // report kept ORIGINAL indices to the kernel (w.filtered)
+    if (entry.reportFilter) {
+        entry.reportFilter(entry.drawOrder ? indices.map(p => entry.drawOrder[p]) : indices);
+    }
+}
+
+// Remap a set of drawn positions from one panel to another by ORIGINAL cell
+// (using each panel's drawOrder). Identity when neither panel is reordered.
+function remapPositions(posIter, srcEntry, tgtEntry) {
+    const sDO = srcEntry.drawOrder, tDO = tgtEntry.drawOrder;
+    if (!sDO && !tDO) return new Set(posIter);
+    if (tDO && !tgtEntry._invDrawOrder) {
+        const m = new Map();
+        for (let i = 0; i < tDO.length; i++) m.set(tDO[i], i);
+        tgtEntry._invDrawOrder = m;
+    }
+    const out = new Set();
+    for (const p of posIter) {
+        const orig = sDO ? sDO[p] : p;
+        const tp = tDO ? tgtEntry._invDrawOrder.get(orig) : orig;
+        if (tp !== undefined) out.add(tp);
+    }
+    return out;
 }
 
 // Share legend / range filtering across a sync group. Independent plots (no
 // syncGroup) stay isolated; plots linked via `syncPlots` / compose() filter
-// together. Filters are by point index (shared cells), so this works even when
-// group members colour by different variables.
+// together. Filters map by ORIGINAL cell, so this works even when group members
+// colour by different variables / are drawn in different orders.
 function propagateFiltersToGroup(src) {
     if (!src || !src.syncGroup || !globalRegistry.globalSyncEnabled) return;
     src.syncGroup.forEach(pid => {
@@ -278,7 +302,13 @@ function propagateFiltersToGroup(src) {
                 }
             });
         } else {
-            e.indexFilters = new Map(src.indexFilters);   // same cells -> positional copy
+            // map src positions -> ORIGINAL cells -> this panel's positions, so a
+            // legend filter lands on the SAME cells even when panels are drawn in
+            // different orders (compose by different colour variables).
+            e.indexFilters = new Map();
+            src.indexFilters.forEach((posSet, varName) => {
+                e.indexFilters.set(varName, remapPositions(posSet, src, e));
+            });
         }
         if (e.updateLegendUI) e.updateLegendUI();
         recalcAndApplyFilters(e);
@@ -2439,6 +2469,13 @@ HTMLWidgets.widget({
                     }
                     if (xData.zoomOnSelection && indices.length) zoomToSelection();
                 };
+                // Report the filtered set to the kernel (w.filtered). orig = kept
+                // ORIGINAL indices, or null when no filter is active.
+                { const _e = globalRegistry.get(plotId);
+                  if (_e) _e.reportFilter = (orig) => {
+                      try { container.dispatchEvent(new CustomEvent('sp-filter',
+                          { detail: { plotId: plotId, indices: orig }, bubbles: false })); } catch (e) {}
+                  }; }
                 const mirrorToGroup = (apply) => {
                     const e0 = globalRegistry.get(plotId);
                     if (!globalRegistry.globalSyncEnabled || globalRegistry.isSyncing || !e0 || !e0.syncGroup) return;

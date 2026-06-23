@@ -72,6 +72,16 @@ function mount(el, model) {
   };
   container.addEventListener("sp-selection", onSel);
 
+  // Filter round-trip: in-plot filters -> model._filtered (Python reads w.filtered).
+  // null indices => no active filter.
+  const onFilter = (ev) => {
+    const idx = ev.detail.indices;
+    model.set("_filtered_on", idx != null);
+    model.set("_filtered", idx || []);
+    model.save_changes();
+  };
+  container.addEventListener("sp-filter", onFilter);
+
   // Detail-on-zoom: forward the current viewport to the kernel, which re-renders
   // the cells inside it (full detail when zoomed in). model.send -> widget.on_msg.
   const onViewport = (ev) => {
@@ -120,6 +130,7 @@ function mount(el, model) {
   return () => {
     ro.disconnect();
     container.removeEventListener("sp-selection", onSel);
+    container.removeEventListener("sp-filter", onFilter);
     container.removeEventListener("sp-viewport", onViewport);
     container.removeEventListener("sp-lasso", onLasso);
     container.removeEventListener("sp-legendfilter", onLegendFilter);
