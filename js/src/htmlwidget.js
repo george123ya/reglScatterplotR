@@ -2315,6 +2315,7 @@ HTMLWidgets.widget({
                     filterData: filterBuffers, categoryData: catData,
                     colorVar: xData.colorVar, groupVar: xData.groupVar,
                     detailOnZoom: xData.detailOnZoom,   // read in the legend-click handler (factory scope, no xData)
+                    drawOrder: xData.drawOrder || null, // original cell per drawn position (for cross-panel selection sync)
                     options: xData.options, legend: xData.legend, n_points: n,
                     updateLegendUI: updateLegendUI, createLegend: createLegend,
                     isInitializing: true, autoFit: xData.autoFit, serverIndices: xData.init_server_indices,
@@ -2446,15 +2447,42 @@ HTMLWidgets.widget({
                         e0.syncGroup.forEach(pid => {
                             if (pid === plotId) return;
                             const e = globalRegistry.get(pid);
-                            if (e && e.plot && e.canvas && e.canvas.isConnected) apply(e.plot);
+                            if (e && e.plot && e.canvas && e.canvas.isConnected) apply(e.plot, e);
                         });
                     } finally { globalRegistry.isSyncing = false; }
+                };
+                // Map drawn positions in THIS panel -> ORIGINAL cells -> drawn
+                // positions in a target panel, so a selection lands on the SAME cells
+                // even when panels are drawn in different orders (compose by different
+                // colours). Identity when neither panel has a draw order.
+                const mapSelToPanel = (positions, targetEntry) => {
+                    const myDO = (globalRegistry.get(plotId) || {}).drawOrder;
+                    const tgtDO = targetEntry.drawOrder;
+                    if (!myDO && !tgtDO) return positions;             // both identity -> positional
+                    const orig = myDO ? positions.map(p => myDO[p]) : positions;
+                    if (!tgtDO) return orig;                            // target identity -> originals are positions
+                    if (!targetEntry._invDrawOrder) {
+                        const m = new Map();
+                        for (let i = 0; i < tgtDO.length; i++) m.set(tgtDO[i], i);
+                        targetEntry._invDrawOrder = m;
+                    }
+                    const out = [];
+                    for (const o of orig) { const p = targetEntry._invDrawOrder.get(o); if (p !== undefined) out.push(p); }
+                    return out;
                 };
 
                 const unsubSelect = plot.subscribe('select', ({ points: sel }) => {
                     const indices = Array.from(sel);
                     reportSelection(indices);
-                    mirrorToGroup(pl => pl.select(sel, { preventEvent: true }));
+                    // progressive panels sync cross-panel via the kernel (sp-lasso,
+                    // original-cell); the positional JS mirror would use a stale order.
+                    if (!xData.detailOnZoom) {
+                        mirrorToGroup((pl, e) => {
+                            const tgt = mapSelToPanel(indices, e);   // map by ORIGINAL cell
+                            tgt.length ? pl.select(tgt, { preventEvent: true })
+                                       : pl.deselect({ preventEvent: true });
+                        });
+                    }
                 });
                 window.__spUnsubscribers[plotId].push(unsubSelect);
 
