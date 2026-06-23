@@ -1293,19 +1293,20 @@ HTMLWidgets.widget({
                               if (buffer) { for(let p=0; p<n; p++) { if (currentSelections.has(Math.round(buffer[p]))) { newIndexSet.add(p); } } entry.indexFilters.set(myVar, newIndexSet); }
                           }
                           if (entry.updateLegendUI) entry.updateLegendUI();
-                          if (entry.detailOnZoom && entry.syncGroup) {   // NB: xData is out of scope here (factory, not renderValue)
-                              // progressive + LINKED: route via the kernel so the
-                              // filter resolves to ORIGINAL cells and syncs cross-
-                              // variable across panels. Heavier (full-data scan), but
-                              // only worth it when there ARE siblings to sync.
+                          if (entry.detailOnZoom) {   // NB: xData is out of scope here (factory, not renderValue)
+                              // progressive: route via the kernel so the filter
+                              // resolves to ORIGINAL cells over the FULL dataset (not
+                              // just the drawn subset) — this is what makes w.filtered
+                              // report the real count AND keeps the filter correct
+                              // across viewport swaps + linked panels. The full-data
+                              // scan is vectorised (~ms even at 10M).
                               const cs = entry.categorySelections.get(myVar);
                               const names = cs ? Array.from(cs).map(ix => legendData.names[ix]) : null;
                               try { container.dispatchEvent(new CustomEvent('sp-legendfilter',
                                   { detail: { plotId: plotId, cats: names }, bubbles: false })); } catch (e) {}
                           } else {
-                              // single plot (incl. a standalone progressive plot):
-                              // filter the DISPLAYED points locally — fast, no kernel
-                              // round-trip over millions of cells.
+                              // non-progressive: filter the (fully rendered) points
+                              // locally — no kernel round-trip needed.
                               recalcAndApplyFilters(entry);
                               propagateFiltersToGroup(entry);
                           }
