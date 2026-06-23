@@ -2109,12 +2109,10 @@ HTMLWidgets.widget({
                         resetView();
                     });
                 }
-                // Plain mouse-wheel should scroll the notebook, not zoom the plot;
-                // hold Ctrl/Cmd to zoom. Rather than fight the page for the wheel
-                // event (stopPropagation also blocks JupyterLab's own scroll), we
-                // toggle regl-scatterplot's `cameraIsFixed`: when fixed it doesn't
-                // preventDefault on wheel, so the browser scrolls natively. We
-                // un-fix for Ctrl/Cmd (zoom) and on mousedown (so drag still pans).
+                // Wheel model: scroll over a DATA POINT zooms (no modifier needed);
+                // scroll over EMPTY space scrolls the page. We toggle regl's
+                // `cameraIsFixed` — when fixed it doesn't preventDefault on wheel, so
+                // the browser scrolls natively (and we forward for the static iframe).
                 if (container && !container.__rsWheel) {
                     container.__rsWheel = true;
                     let curFixed = false;
@@ -2123,35 +2121,22 @@ HTMLWidgets.widget({
                         curFixed = v;
                         try { plot.set({ cameraIsFixed: v }); } catch (err) {}
                     };
-                    // Transient hint shown when the user scrolls without a modifier
-                    // (they probably expected scroll-to-zoom). Teaches Ctrl/Cmd+scroll.
-                    const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
-                    let hint = null, hintTimer = null;
-                    const showZoomHint = () => {
-                        if (!hint) {
-                            hint = document.createElement('div');
-                            hint.textContent = (isMac ? '⌘' : 'Ctrl') + ' + scroll to zoom';
-                            hint.style.cssText = 'position:absolute; bottom:8px; left:50%; ' +
-                                'transform:translateX(-50%); z-index:60; pointer-events:none; ' +
-                                'background:rgba(0,0,0,0.72); color:#fff; font-size:11px; ' +
-                                'padding:3px 9px; border-radius:10px; opacity:0; ' +
-                                'transition:opacity 0.15s; font-family:-apple-system,' +
-                                'BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;';
-                            container.appendChild(hint);
-                        }
-                        hint.style.opacity = '1';
-                        clearTimeout(hintTimer);
-                        hintTimer = setTimeout(() => { if (hint) hint.style.opacity = '0'; }, 1100);
-                    };
+                    // Track whether the cursor is over a point (regl's hover pick).
+                    let overData = false;
+                    try {
+                        const uOver = plot.subscribe('pointover', () => { overData = true; });
+                        const uOut = plot.subscribe('pointout', () => { overData = false; });
+                        if (window.__spUnsubscribers && window.__spUnsubscribers[plotId])
+                            window.__spUnsubscribers[plotId].push(uOver, uOut);
+                    } catch (err) {}
                     container.addEventListener('wheel', (e) => {
-                        const zoom = e.ctrlKey || e.metaKey;
-                        setFixed(!zoom);            // plain -> fixed (no zoom); ctrl -> zoom
-                        if (zoom) return;
-                        showZoomHint();
-                        // Live widget: the camera being fixed means regl doesn't
-                        // preventDefault, so the notebook scrolls natively. The STATIC
-                        // render is an <iframe> that LATCHES a wheel gesture started on
-                        // it, so forward the scroll to the notebook's scroll container.
+                        const zoom = overData;      // over a point -> zoom; empty -> page scroll
+                        setFixed(!zoom);
+                        if (zoom) return;           // let regl zoom toward the cursor
+                        // empty space: scroll the page. Live widget (no iframe) bubbles
+                        // natively (cameraIsFixed -> regl doesn't preventDefault). The
+                        // STATIC <iframe> latches the gesture, so forward it to the
+                        // notebook's scroll container.
                         let fe = null; try { fe = window.frameElement; } catch (err) {}
                         if (!fe) return;
                         let pdoc; try { pdoc = window.parent.document; } catch (err) { return; }
