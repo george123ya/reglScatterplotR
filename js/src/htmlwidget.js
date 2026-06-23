@@ -2759,8 +2759,12 @@ HTMLWidgets.widget({
                 const cW = newW - margin.left - margin.right;
                 const cH = newH - margin.top - margin.bottom;
                 if (canvas && plot) {
-                    canvas.width = cW; canvas.height = cH;
-                    canvas.style.width = cW + 'px'; canvas.style.height = cH + 'px';
+                    // Do NOT size the canvas ourselves: regl-scatterplot owns the
+                    // drawing buffer (canvas.width = width * devicePixelRatio). Setting
+                    // it here to plain CSS px clobbered the DPR scaling whenever a
+                    // resize fired with unchanged dims (plot.set early-returns), so the
+                    // rendered content and the pointer mapping desynced -> the pan
+                    // "phantom"/offset click, especially in a settling compose grid.
                     const entry = globalRegistry.get(plotId);
                     // Mark every camera write that happens here as
                     // programmatic so the 'view' subscriber doesn't promote
