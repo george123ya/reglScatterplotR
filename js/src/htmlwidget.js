@@ -545,18 +545,20 @@ function createFilterPanel(container, entry, fontSize, margins) {
             if (range === null) delete entry.activeStrainers[key];
             else entry.activeStrainers[key] = range;
             // sync the SAME slider on linked panels (same variable = same data)
-            syncStrainerToGroup(entry, key, range);
-            // Always filter the DRAWN points immediately (instant visual feedback).
-            recalcAndApplyFilters(entry);
-            propagateFiltersToGroup(entry);
+            try { syncStrainerToGroup(entry, key, range); } catch (e) {}
+            // progressive: have the kernel compute the kept set over the FULL dataset
+            // (vp["full_filter"]) ∩ any legend filter, so w.filtered reports every
+            // in-range cell (not just the drawn subset) and the filter persists across
+            // viewport swaps. Dispatch FIRST and isolate the local-display calls below
+            // so a throw in them can never suppress this (the minifier folds the body
+            // into one comma expression, so an unguarded throw skips the dispatch).
             if (entry.detailOnZoom) {
-                // progressive: ALSO have the kernel compute the kept set over the
-                // FULL dataset (vp["full_filter"]) ∩ any legend filter, so w.filtered
-                // reports every in-range cell (not just the drawn subset) and the
-                // filter persists across viewport swaps. Send all active range sliders.
                 try { container.dispatchEvent(new CustomEvent('sp-rangefilter',
                     { detail: { plotId: plotId, ranges: entry.activeStrainers }, bubbles: false })); } catch (e) {}
             }
+            // Filter the DRAWN points immediately (instant visual feedback).
+            try { recalcAndApplyFilters(entry); } catch (e) {}
+            try { propagateFiltersToGroup(entry); } catch (e) {}
         };
 
         const startDrag = (which) => (ev) => {
