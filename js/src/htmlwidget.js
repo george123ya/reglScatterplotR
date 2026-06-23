@@ -2052,6 +2052,13 @@ HTMLWidgets.widget({
                         renderer, canvas, width: cW, height: cH, pixelRatio: dpr,
                         xScale: intXScale, yScale: intYScale, pointSize: xData.options.size,
                         aspectRatio: initialAspectRatio, performanceMode: xData.performanceMode,
+                        // Long-press then drag = lasso, no modifier needed. Shift+drag
+                        // also lassos where the host allows it, but JupyterLab grabs
+                        // Shift+mousedown at the document level (cell/text selection)
+                        // before the canvas sees it, so on a server Lab the modifier
+                        // never arrives — long-press can't be intercepted, so lasso
+                        // works everywhere (plus the toolbar lasso button).
+                        lassoOnLongPress: true,
                         // Build the KDBush spatial index (lasso/hover hit-testing) in a
                         // Web Worker so it doesn't block/freeze the main thread on large
                         // data — regl-scatterplot builds it eagerly on every draw().
