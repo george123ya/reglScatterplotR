@@ -2059,6 +2059,18 @@ HTMLWidgets.widget({
                         // never arrives — long-press can't be intercepted, so lasso
                         // works everywhere (plus the toolbar lasso button).
                         lassoOnLongPress: true,
+                        // Click a point = select it; ADD to the selection with Ctrl
+                        // (Win/Linux) or Cmd (Mac); remove with Alt. Ctrl isn't
+                        // intercepted by JupyterLab the way Shift is (that's why
+                        // Ctrl+scroll works on servers), so Ctrl+click is reliable
+                        // everywhere — unlike Shift+drag lasso.
+                        actionKeyMap: {
+                            lasso: 'shift',
+                            merge: (/Mac|iPhone|iPad/.test((typeof navigator !== 'undefined'
+                                && (navigator.platform || navigator.userAgent)) || '') ? 'cmd' : 'ctrl'),
+                            rotate: 'alt',
+                            remove: 'alt',
+                        },
                         // Build the KDBush spatial index (lasso/hover hit-testing) in a
                         // Web Worker so it doesn't block/freeze the main thread on large
                         // data — regl-scatterplot builds it eagerly on every draw().
