@@ -254,8 +254,9 @@ function applyGroupFilter(group) {
     let inter = null, any = false;
     for (const e of entries) {
         if (e.detailOnZoom) continue;      // progressive panels sync via the kernel
-        const s = e._ownKeptOrig;          // undefined/null = that panel adds no constraint
-        if (s == null) continue;
+        const s = computeOwnKept(e);       // recompute fresh (a sibling's strainers may have changed)
+        e._ownKeptOrig = s;
+        if (s == null) continue;           // null = that panel adds no constraint
         any = true;
         inter = (inter === null) ? new Set(s) : new Set([...inter].filter(x => s.has(x)));
     }
@@ -297,6 +298,24 @@ function remapPositions(posIter, srcEntry, tgtEntry) {
 // syncGroup) stay isolated; plots linked via `syncPlots` / compose() filter
 // together. Filters map by ORIGINAL cell, so this works even when group members
 // colour by different variables / are drawn in different orders.
+// Mirror a range-slider change to the SAME slider on linked panels (handles +
+// label + activeStrainers) so both move together. Only panels that HAVE the
+// variable (same data); a panel coloured by something else just gets the filtered
+// RESULT via applyGroupFilter.
+function syncStrainerToGroup(src, key, range) {
+    if (!src || !src.syncGroup || !globalRegistry.globalSyncEnabled) return;
+    src.syncGroup.forEach(pid => {
+        if (pid === src.plotId) return;
+        const e = globalRegistry.get(pid);
+        if (!e || !e.plot || e.plot._destroyed || e.detailOnZoom) return;
+        if (!e._strainerSetters || !e._strainerSetters[key]) return;
+        if (!e.activeStrainers) e.activeStrainers = {};
+        if (range === null) delete e.activeStrainers[key];
+        else e.activeStrainers[key] = range.slice();
+        e._strainerSetters[key](range);
+    });
+}
+
 function propagateFiltersToGroup(src) {
     if (!src || !src.syncGroup || !globalRegistry.globalSyncEnabled) return;
     // Non-progressive linked panels are handled by recalcAndApplyFilters ->
@@ -511,12 +530,23 @@ function createFilterPanel(container, entry, fontSize, margins) {
         };
         redraw();
 
+        // Let a linked panel move THIS slider (handles + label) without re-firing
+        // apply() — used to keep the same filter in sync across compose panels.
+        entry._strainerSetters = entry._strainerSetters || {};
+        entry._strainerSetters[key] = (range) => {
+            curLo = range ? range[0] : lo;
+            curHi = range ? range[1] : hi;
+            redraw();
+        };
+
         const apply = () => {
             if (!entry.activeStrainers) entry.activeStrainers = {};
-            if (curLo <= lo && curHi >= hi) delete entry.activeStrainers[key];
-            else entry.activeStrainers[key] = [curLo, curHi];
-            recalcAndApplyFilters(entry);
-            propagateFiltersToGroup(entry);
+            const range = (curLo <= lo && curHi >= hi) ? null : [curLo, curHi];
+            if (range === null) delete entry.activeStrainers[key];
+            else entry.activeStrainers[key] = range;
+            // sync the SAME slider on linked panels (same variable = same data)
+            syncStrainerToGroup(entry, key, range);
+            recalcAndApplyFilters(entry);   // applyGroupFilter applies the intersected result to all
         };
 
         const startDrag = (which) => (ev) => {
