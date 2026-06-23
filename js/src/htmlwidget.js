@@ -233,13 +233,21 @@ function origToPositions(entry, origIter) {
 // Apply a resolved kept-set (ORIGINAL indices, or null = show all) to one plot.
 function applyResolvedFilter(entry, keptOrig) {
     if (!entry || !entry.plot || entry.plot._destroyed) return;
+    // regl-scatterplot's filter() prunes the selection to the still-visible points
+    // (and fires a 'select' event that would overwrite our tracked selection). Use
+    // preventEvent so it doesn't clobber entry.selectedIndices, then re-apply the
+    // FULL selection: regl keeps selected-but-hidden points, so the ones a filter
+    // hides stay selected and reappear when the filter is cleared.
+    const sel = (entry.selectedIndices && entry.selectedIndices.length)
+        ? entry.selectedIndices.slice() : null;
     if (keptOrig === null) {
-        entry.plot.unfilter({ transition: 0 });
+        entry.plot.unfilter({ transition: 0, preventEvent: true });
         if (entry.reportFilter) entry.reportFilter(null);
     } else {
-        entry.plot.filter(origToPositions(entry, keptOrig), { transition: 0 });
+        entry.plot.filter(origToPositions(entry, keptOrig), { transition: 0, preventEvent: true });
         if (entry.reportFilter) entry.reportFilter(Array.from(keptOrig));
     }
+    if (sel) { try { entry.plot.select(sel, { preventEvent: true }); } catch (e) {} }
     if (window.Shiny && entry.plotId === 'p1')
         window.Shiny.setInputValue("filtered_count", keptOrig === null ? entry.n_points : keptOrig.size);
 }
@@ -1743,9 +1751,13 @@ HTMLWidgets.widget({
                 }
                 // synced legend filter (original-cell): keep positions, null = show all
                 if (msg.type === 'vp_filter') {
+                    const _sel = (entry.selectedIndices && entry.selectedIndices.length)
+                        ? entry.selectedIndices.slice() : null;
                     try {
                         if (msg.keep === null) entry.plot.unfilter({ preventEvent: true });
                         else if (Array.isArray(msg.keep)) entry.plot.filter(msg.keep, { preventEvent: true });
+                        // re-apply the full selection (filter() prunes it to visible)
+                        if (_sel) entry.plot.select(_sel, { preventEvent: true });
                     } catch (e) {}
                     return;
                 }
