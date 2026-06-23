@@ -82,6 +82,13 @@ function mount(el, model) {
   };
   container.addEventListener("sp-filter", onFilter);
 
+  // Camera round-trip: the live view -> model._camera so to_html can export the
+  // current zoom/pan.
+  const onCamera = (ev) => {
+    try { model.set("_camera", ev.detail.view || []); model.save_changes(); } catch (e) {}
+  };
+  container.addEventListener("sp-camera", onCamera);
+
   // Detail-on-zoom: forward the current viewport to the kernel, which re-renders
   // the cells inside it (full detail when zoomed in). model.send -> widget.on_msg.
   const onViewport = (ev) => {
@@ -131,6 +138,7 @@ function mount(el, model) {
     ro.disconnect();
     container.removeEventListener("sp-selection", onSel);
     container.removeEventListener("sp-filter", onFilter);
+    container.removeEventListener("sp-camera", onCamera);
     container.removeEventListener("sp-viewport", onViewport);
     container.removeEventListener("sp-lasso", onLasso);
     container.removeEventListener("sp-legendfilter", onLegendFilter);

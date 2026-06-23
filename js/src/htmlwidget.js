@@ -1893,6 +1893,11 @@ HTMLWidgets.widget({
                     if (!initialView && masterEntry && masterEntry.savedCameraView) initialView = cloneCamera(masterEntry.savedCameraView);
                 }
                 if (!initialView && existingEntry && existingEntry.savedCameraView) initialView = existingEntry.savedCameraView;
+                // A baked camera (from to_html snapshot of a live view) opens the
+                // static plot at that zoom/pan.
+                if (!initialView && Array.isArray(xData.cameraView) && xData.cameraView.length) {
+                    initialView = xData.cameraView;
+                }
 
                 const n = xData.n_points;
                 // Channels may arrive as base64 strings (default) OR, in the
@@ -2428,6 +2433,7 @@ HTMLWidgets.widget({
                 recalcAndApplyFilters(globalRegistry.get(plotId));
 
                 let _axisRaf = null;
+                let _camRaf = null;
                 let _vpTimer = null;
                 // Motion-LOD (cheap): shrink the point size while the camera moves so
                 // a dense cloud thins out and pans smoothly (less overdraw), then
@@ -2455,6 +2461,16 @@ HTMLWidgets.widget({
                     const e = globalRegistry.get(plotId);
                     if (e) {
                         e.savedCameraView = cloneCamera(plot.get('cameraView'));
+                        // Report the camera to the kernel (debounced) so to_html can
+                        // export the CURRENT view. w.selection/w.filtered already sync.
+                        if (!e.isInitializing) {
+                            if (_camRaf) clearTimeout(_camRaf);
+                            _camRaf = setTimeout(() => {
+                                try { container.dispatchEvent(new CustomEvent('sp-camera',
+                                    { detail: { plotId: plotId, view: Array.from(e.savedCameraView || []) },
+                                      bubbles: false })); } catch (er) {}
+                            }, 400);
+                        }
                         // Only treat view events as "user interaction" when
                         // (a) we're past initial setup and (b) we're not
                         // currently inside a programmatic resize / zoom call.
@@ -2748,7 +2764,9 @@ HTMLWidgets.widget({
                     mk('Lasso select', TB.lasso, (b) => setMode('lasso', b));
                     mk('Zoom to selection', TB.zoom, () => zoomToSelection());
                     mk('Reset view', TB.reset, () => resetView());
-                    mk('Screenshot (PNG)', TB.cam, () => downloadPlot('png'));
+                    // No screenshot button: html2canvas re-rasterizes the whole DOM and
+                    // froze Jupyter for ~minutes on big plots. Export via save=/to_html
+                    // (fast, self-contained) instead.
                     panBtn.classList.add('on'); panBtn.style.color = '#fff';
 
                     // Drag grip so the toolbar can be moved off the axes.
