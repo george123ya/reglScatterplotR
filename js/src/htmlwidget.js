@@ -159,99 +159,119 @@ const cleanUpZombies = () => {
 };
 
 // --- CORE FILTER LOGIC (INTERSECTION) ---
-function recalcAndApplyFilters(entry) {
-    if (!entry || !entry.plot) return;
-
+// Cells kept by THIS plot's own filters, as a Set of ORIGINAL indices (null = no
+// own filter -> no constraint). Used to intersect filters across linked panels.
+function computeOwnKept(entry) {
     const n = entry.n_points;
-    // Filter state is per-plot so independent plots on the same page (e.g.
-    // several widgets in one Jupyter notebook, which all share `window`) do not
-    // affect each other when you toggle a legend category or drag a filter.
     const strainers = entry.activeStrainers || (entry.activeStrainers = {});
     const strainerKeys = Object.keys(strainers);
-    const hasStrainers = (strainerKeys.length > 0);
+    const hasStrainers = strainerKeys.length > 0;
     const hasServerFilter = (entry.serverIndices && entry.serverIndices.length > 0);
-
-    // 1. Active categorical (legend) filters for this plot
     if (!entry.indexFilters) entry.indexFilters = new Map();
     const activeVarFilters = Array.from(entry.indexFilters.values());
-    const hasCatFilters = (activeVarFilters.length > 0);
+    const hasCatFilters = activeVarFilters.length > 0;
+    if (!hasServerFilter && !hasStrainers && !hasCatFilters) return null;
 
-    // If NO constraints anywhere, unfilter
-    if (!hasServerFilter && !hasStrainers && !hasCatFilters) {
-        entry.plot.unfilter({ transition: 0 });
-        if (window.Shiny && entry.plotId === 'p1') window.Shiny.setInputValue("filtered_count", n);
-        if (entry.reportFilter) entry.reportFilter(null);   // no filter -> w.filtered is None
-        return;
-    }
-
-    const indices = [];
-    const filterBuffers = entry.filterData; 
-
-    // OPTIMIZATION: Intersection Strategy
+    const filterBuffers = entry.filterData;
     let candidates = null;
-
     if (hasCatFilters) {
-        let smallestSet = activeVarFilters[0];
-        for (let i = 1; i < activeVarFilters.length; i++) {
-            if (activeVarFilters[i].size < smallestSet.size) smallestSet = activeVarFilters[i];
-        }
-        candidates = Array.from(smallestSet);
+        let smallest = activeVarFilters[0];
+        for (let i = 1; i < activeVarFilters.length; i++)
+            if (activeVarFilters[i].size < smallest.size) smallest = activeVarFilters[i];
+        candidates = Array.from(smallest);
     } else if (hasServerFilter) {
         candidates = entry.serverIndices;
     }
-
-    // Helper: Check Range Filters
     const passesStrainers = (i) => {
         if (!hasStrainers) return true;
         for (let k = 0; k < strainerKeys.length; k++) {
-            const varName = strainerKeys[k];
-            const range = strainers[varName];
-            if (filterBuffers[varName]) {
-                const val = filterBuffers[varName][i];
-                if (val < range[0] || val > range[1]) return false;
-            }
+            const r = strainers[strainerKeys[k]];
+            const buf = filterBuffers && filterBuffers[strainerKeys[k]];
+            if (buf) { const v = buf[i]; if (v < r[0] || v > r[1]) return false; }
         }
         return true;
     };
-
     let serverSet = null;
     if (hasServerFilter && candidates !== entry.serverIndices) {
-         if (!entry.serverIndicesSet) entry.serverIndicesSet = new Set(entry.serverIndices);
-         serverSet = entry.serverIndicesSet;
+        if (!entry.serverIndicesSet) entry.serverIndicesSet = new Set(entry.serverIndices);
+        serverSet = entry.serverIndicesSet;
     }
-
     const passesServer = (i) => {
         if (!hasServerFilter) return true;
-        if (candidates === entry.serverIndices) return true; 
+        if (candidates === entry.serverIndices) return true;
         return serverSet.has(i);
     };
-
     const passesCats = (i) => {
         if (!hasCatFilters) return true;
-        for (const filterSet of activeVarFilters) {
-            if (!filterSet.has(i)) return false;
-        }
+        for (const fs of activeVarFilters) if (!fs.has(i)) return false;
         return true;
     };
-
     const loopMax = candidates ? candidates.length : n;
-    
+    const dO = entry.drawOrder;
+    const kept = new Set();
     for (let j = 0; j < loopMax; j++) {
         const i = candidates ? candidates[j] : j;
-        if (passesCats(i) && passesServer(i) && passesStrainers(i)) {
-            indices.push(i);
-        }
+        if (passesCats(i) && passesServer(i) && passesStrainers(i)) kept.add(dO ? dO[i] : i);
     }
-    
-    entry.plot.filter(indices, { transition: 0 });
+    return kept;
+}
 
-    if (window.Shiny && entry.plotId === 'p1') {
-         window.Shiny.setInputValue("filtered_count", indices.length);
+// Map ORIGINAL indices to this plot's drawn positions.
+function origToPositions(entry, origIter) {
+    const dO = entry.drawOrder;
+    if (!dO) return Array.from(origIter);
+    if (!entry._invDrawOrder) {
+        const m = new Map();
+        for (let i = 0; i < dO.length; i++) m.set(dO[i], i);
+        entry._invDrawOrder = m;
     }
-    // report kept ORIGINAL indices to the kernel (w.filtered)
-    if (entry.reportFilter) {
-        entry.reportFilter(entry.drawOrder ? indices.map(p => entry.drawOrder[p]) : indices);
+    const out = [];
+    for (const o of origIter) { const p = entry._invDrawOrder.get(o); if (p !== undefined) out.push(p); }
+    return out;
+}
+
+// Apply a resolved kept-set (ORIGINAL indices, or null = show all) to one plot.
+function applyResolvedFilter(entry, keptOrig) {
+    if (!entry || !entry.plot || entry.plot._destroyed) return;
+    if (keptOrig === null) {
+        entry.plot.unfilter({ transition: 0 });
+        if (entry.reportFilter) entry.reportFilter(null);
+    } else {
+        entry.plot.filter(origToPositions(entry, keptOrig), { transition: 0 });
+        if (entry.reportFilter) entry.reportFilter(Array.from(keptOrig));
     }
+    if (window.Shiny && entry.plotId === 'p1')
+        window.Shiny.setInputValue("filtered_count", keptOrig === null ? entry.n_points : keptOrig.size);
+}
+
+// Intersect every linked panel's OWN kept set (by ORIGINAL cell) and apply the
+// result to ALL of them — so a filter on ONE panel filters the whole group, even
+// panels coloured/built without that filter variable.
+function applyGroupFilter(group) {
+    const entries = Array.from(group)
+        .map(id => globalRegistry.get(id))
+        .filter(e => e && e.plot && !e.plot._destroyed);
+    let inter = null, any = false;
+    for (const e of entries) {
+        if (e.detailOnZoom) continue;      // progressive panels sync via the kernel
+        const s = e._ownKeptOrig;          // undefined/null = that panel adds no constraint
+        if (s == null) continue;
+        any = true;
+        inter = (inter === null) ? new Set(s) : new Set([...inter].filter(x => s.has(x)));
+    }
+    const resolved = any ? inter : null;
+    for (const e of entries) { if (!e.detailOnZoom) applyResolvedFilter(e, resolved); }
+}
+
+function recalcAndApplyFilters(entry) {
+    if (!entry || !entry.plot) return;
+    entry._ownKeptOrig = computeOwnKept(entry);   // this plot's own filters (original cells)
+    // Non-progressive linked panels intersect filters by original cell; progressive
+    // panels manage cross-panel filtering through the kernel, so apply locally.
+    if (entry.syncGroup && globalRegistry.globalSyncEnabled && !entry.detailOnZoom)
+        applyGroupFilter(entry.syncGroup);
+    else
+        applyResolvedFilter(entry, entry._ownKeptOrig);
 }
 
 // Remap a set of drawn positions from one panel to another by ORIGINAL cell
@@ -279,37 +299,26 @@ function remapPositions(posIter, srcEntry, tgtEntry) {
 // colour by different variables / are drawn in different orders.
 function propagateFiltersToGroup(src) {
     if (!src || !src.syncGroup || !globalRegistry.globalSyncEnabled) return;
+    // Non-progressive linked panels are handled by recalcAndApplyFilters ->
+    // applyGroupFilter (intersection by original cell). Only PROGRESSIVE panels
+    // (kernel-rendered subsets) still need their own per-panel code recompute here.
     src.syncGroup.forEach(pid => {
         if (pid === src.plotId) return;
         const e = globalRegistry.get(pid);
-        if (!e || !e.plot || e.plot._destroyed) return;
+        if (!e || !e.plot || e.plot._destroyed || !e._overview) return;
         e.activeStrainers = Object.assign({}, src.activeStrainers);
         e.categorySelections = new Map(src.categorySelections);
-        if (e._overview) {
-            // progressive: panels render DIFFERENT point sets, so src's positional
-            // index-filters point at the wrong cells. Recompute this panel's own
-            // category filters from ITS codes (works when panels share the colour
-            // variable; cross-variable sync isn't possible with subsetted views).
-            e.indexFilters = new Map();
-            e.categorySelections.forEach((sel, varName) => {
-                let buf = null;
-                if (e.colorVar === varName) buf = e.zData;
-                else if (e.groupVar === varName) buf = e.categoryData;
-                if (buf && sel && sel.size) {
-                    const s = new Set(); const n = e.n_points;
-                    for (let p = 0; p < n; p++) if (sel.has(Math.round(buf[p]))) s.add(p);
-                    e.indexFilters.set(varName, s);
-                }
-            });
-        } else {
-            // map src positions -> ORIGINAL cells -> this panel's positions, so a
-            // legend filter lands on the SAME cells even when panels are drawn in
-            // different orders (compose by different colour variables).
-            e.indexFilters = new Map();
-            src.indexFilters.forEach((posSet, varName) => {
-                e.indexFilters.set(varName, remapPositions(posSet, src, e));
-            });
-        }
+        e.indexFilters = new Map();
+        e.categorySelections.forEach((sel, varName) => {
+            let buf = null;
+            if (e.colorVar === varName) buf = e.zData;
+            else if (e.groupVar === varName) buf = e.categoryData;
+            if (buf && sel && sel.size) {
+                const s = new Set(); const n = e.n_points;
+                for (let p = 0; p < n; p++) if (sel.has(Math.round(buf[p]))) s.add(p);
+                e.indexFilters.set(varName, s);
+            }
+        });
         if (e.updateLegendUI) e.updateLegendUI();
         recalcAndApplyFilters(e);
     });
