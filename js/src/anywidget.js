@@ -65,10 +65,19 @@ function mount(el, model) {
   // Selection round-trip: lasso in the plot -> model._selection (Python reads
   // w.selection); Python sets w.selection -> highlight points in the plot.
   let applyingFromModel = false;
+  // Bump the generation counter (LAST, after the data) on every selection/filter
+  // commit so a synchronous Python read (w.selection) can block until the kernel
+  // has applied this exact interaction. Sent after model.send for messages that
+  // do the work kernel-side (lasso / legend filter / viewport reset) so the gen
+  // ack only lands once that work is done.
+  const bumpGen = () => {
+    try { model.set("_sel_gen", (model.get("_sel_gen") || 0) + 1); model.save_changes(); } catch (e) {}
+  };
   const onSel = (ev) => {
     if (applyingFromModel) return;
     model.set("_selection", ev.detail.indices || []);
     model.save_changes();
+    bumpGen();
   };
   container.addEventListener("sp-selection", onSel);
 
@@ -79,6 +88,7 @@ function mount(el, model) {
     model.set("_filtered_on", idx != null);
     model.set("_filtered", idx || []);
     model.save_changes();
+    bumpGen();
   };
   container.addEventListener("sp-filter", onFilter);
 
@@ -93,6 +103,8 @@ function mount(el, model) {
   // the cells inside it (full detail when zoomed in). model.send -> widget.on_msg.
   const onViewport = (ev) => {
     try { model.send({ type: "viewport", bounds: ev.detail.bounds, seq: ev.detail.seq, reset: ev.detail.reset }); } catch (e) {}
+    // a double-click reset clears the kernel selection too -> bump so a read waits.
+    if (ev.detail.reset) bumpGen();
   };
   container.addEventListener("sp-viewport", onViewport);
 
@@ -100,12 +112,14 @@ function mount(el, model) {
   // inside it on the full dataset (not just the drawn subset).
   const onLasso = (ev) => {
     try { model.send({ type: "lasso", polygon: ev.detail.polygon }); } catch (e) {}
+    bumpGen();   // after the lasso message, so the ack lands once it's applied
   };
   container.addEventListener("sp-lasso", onLasso);
 
   // Legend category filter -> kernel resolves to original cells + syncs the group.
   const onLegendFilter = (ev) => {
     try { model.send({ type: "legend_filter", cats: ev.detail.cats }); } catch (e) {}
+    bumpGen();
   };
   container.addEventListener("sp-legendfilter", onLegendFilter);
 
