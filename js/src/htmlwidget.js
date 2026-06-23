@@ -2064,11 +2064,13 @@ HTMLWidgets.widget({
                         // intercepted by JupyterLab the way Shift is (that's why
                         // Ctrl+scroll works on servers), so Ctrl+click is reliable
                         // everywhere — unlike Shift+drag lasso.
+                        // NB: no 'rotate' key -> rotation is disabled (Alt+drag rotated
+                        // the camera but the axes didn't follow, so it looked broken).
+                        // Alt+click still removes a point.
                         actionKeyMap: {
                             lasso: 'shift',
                             merge: (/Mac|iPhone|iPad/.test((typeof navigator !== 'undefined'
                                 && (navigator.platform || navigator.userAgent)) || '') ? 'cmd' : 'ctrl'),
-                            rotate: 'alt',
                             remove: 'alt',
                         },
                         // Build the KDBush spatial index (lasso/hover hit-testing) in a
