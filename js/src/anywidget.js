@@ -65,19 +65,21 @@ function mount(el, model) {
   // Selection round-trip: lasso in the plot -> model._selection (Python reads
   // w.selection); Python sets w.selection -> highlight points in the plot.
   let applyingFromModel = false;
-  // Bump the generation counter (LAST, after the data) on every selection/filter
-  // commit so a synchronous Python read (w.selection) can block until the kernel
-  // has applied this exact interaction. Sent after model.send for messages that
-  // do the work kernel-side (lasso / legend filter / viewport reset) so the gen
-  // ack only lands once that work is done.
+  // Bump the generation counter FIRST (a "request" sent before the data/work
+  // message) on every selection/filter commit, so a synchronous Python read
+  // (w.selection) can DETECT that an interaction is in flight and block for it —
+  // even when the kernel work (a 10M-point lasso) takes seconds. The kernel
+  // acknowledges (_applied_gen) only AFTER that work completes, so the read waits
+  // for completion, not just delivery. Sending it first is essential: if it rode
+  // after the heavy message, the read would see "caught up" during the work.
   const bumpGen = () => {
     try { model.set("_sel_gen", (model.get("_sel_gen") || 0) + 1); model.save_changes(); } catch (e) {}
   };
   const onSel = (ev) => {
     if (applyingFromModel) return;
+    bumpGen();
     model.set("_selection", ev.detail.indices || []);
     model.save_changes();
-    bumpGen();
   };
   container.addEventListener("sp-selection", onSel);
 
@@ -85,10 +87,10 @@ function mount(el, model) {
   // null indices => no active filter.
   const onFilter = (ev) => {
     const idx = ev.detail.indices;
+    bumpGen();
     model.set("_filtered_on", idx != null);
     model.set("_filtered", idx || []);
     model.save_changes();
-    bumpGen();
   };
   container.addEventListener("sp-filter", onFilter);
 
@@ -102,24 +104,25 @@ function mount(el, model) {
   // Detail-on-zoom: forward the current viewport to the kernel, which re-renders
   // the cells inside it (full detail when zoomed in). model.send -> widget.on_msg.
   const onViewport = (ev) => {
-    try { model.send({ type: "viewport", bounds: ev.detail.bounds, seq: ev.detail.seq, reset: ev.detail.reset }); } catch (e) {}
-    // a double-click reset clears the kernel selection too -> bump so a read waits.
+    // a double-click reset clears the kernel selection too -> bump FIRST so a read
+    // waits for the reset to be applied.
     if (ev.detail.reset) bumpGen();
+    try { model.send({ type: "viewport", bounds: ev.detail.bounds, seq: ev.detail.seq, reset: ev.detail.reset }); } catch (e) {}
   };
   container.addEventListener("sp-viewport", onViewport);
 
   // Full-region lasso: the polygon goes to the kernel, which selects every cell
   // inside it on the full dataset (not just the drawn subset).
   const onLasso = (ev) => {
+    bumpGen();   // BEFORE the lasso message, so a read detects the pending work
     try { model.send({ type: "lasso", polygon: ev.detail.polygon }); } catch (e) {}
-    bumpGen();   // after the lasso message, so the ack lands once it's applied
   };
   container.addEventListener("sp-lasso", onLasso);
 
   // Legend category filter -> kernel resolves to original cells + syncs the group.
   const onLegendFilter = (ev) => {
-    try { model.send({ type: "legend_filter", cats: ev.detail.cats }); } catch (e) {}
     bumpGen();
+    try { model.send({ type: "legend_filter", cats: ev.detail.cats }); } catch (e) {}
   };
   container.addEventListener("sp-legendfilter", onLegendFilter);
 
@@ -127,8 +130,8 @@ function mount(el, model) {
   // viewport messages) and push a clearing vp_select [] to every linked panel, so a
   // queued pan/zoom can't re-apply the just-cleared selection.
   const onDeselect = () => {
-    try { model.send({ type: "deselect" }); } catch (e) {}
     bumpGen();
+    try { model.send({ type: "deselect" }); } catch (e) {}
   };
   container.addEventListener("sp-deselect", onDeselect);
 
