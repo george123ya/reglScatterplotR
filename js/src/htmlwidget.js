@@ -2130,29 +2130,44 @@ HTMLWidgets.widget({
                         if (xData.detailOnZoom) {
                             _vpSeq++;   // invalidate any in-flight detail responses first
                             const ent2 = globalRegistry.get(plotId);
-                            // double-click resets the view AND clears the selection
-                            // (regl's own dblclick deselects too) — clear it locally
-                            // so a stale lasso / persisted selection can't re-appear.
-                            try { plot.deselect({ preventEvent: true }); } catch (e) {}
-                            if (ent2) ent2.selectedIndices = [];
+                            // reset the VIEW only — keep the selection (Escape clears it).
+                            // The kernel snap-back re-applies the current selection.
                             if (ent2 && ent2._overview && instance && instance.updateData) {
                                 try { instance.updateData({ type: 'vp_overview' }); } catch (e) {}
                             }
                             if (xDomainOrig && yDomainOrig) {
-                                setTimeout(() => {   // re-sync kernel (reuse the bumped seq); reset=true clears vp.sel
+                                setTimeout(() => {   // re-sync kernel (reuse the bumped seq)
                                     _emitViewport([xDomainOrig[0], yDomainOrig[0],
-                                                   xDomainOrig[1], yDomainOrig[1]], false, true);
+                                                   xDomainOrig[1], yDomainOrig[1]], false);
                                 }, 60);
                             }
                         }
                     } catch (err) {}
                 };
-                // Double-click resets the view to the full data extent.
+                // Double-click resets the view (zoom) — selection is kept; Escape clears it.
                 if (canvas && !canvas.__rsDbl) {
                     canvas.__rsDbl = true;
                     canvas.addEventListener('dblclick', (e) => {
                         e.preventDefault();
                         resetView();
+                    });
+                }
+                // Escape (while hovering this plot, and only if something is selected)
+                // deselects — without stealing Jupyter's own Escape (command mode) when
+                // the cursor is elsewhere or there's nothing to clear.
+                if (canvas && !canvas.__rsEsc) {
+                    canvas.__rsEsc = true;
+                    let overCanvas = false;
+                    canvas.addEventListener('mouseenter', () => { overCanvas = true; });
+                    canvas.addEventListener('mouseleave', () => { overCanvas = false; });
+                    document.addEventListener('keydown', (e) => {
+                        if (e.key !== 'Escape' || !overCanvas || !plot || plot._destroyed) return;
+                        const e0 = globalRegistry.get(plotId);
+                        const hasSel = e0 && ((e0.selectedIndices && e0.selectedIndices.length) ||
+                            (e0._vp && e0._vp.sel && e0._vp.sel.size));
+                        if (!hasSel) return;        // nothing to clear -> let Jupyter handle Escape
+                        try { plot.deselect(); } catch (err) {}   // fires events -> clears local + kernel + group
+                        e.preventDefault(); e.stopPropagation();
                     });
                 }
                 // Wheel model: scroll anywhere INSIDE THE AXES (over the canvas) zooms
