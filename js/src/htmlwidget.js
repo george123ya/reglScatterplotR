@@ -2583,8 +2583,22 @@ HTMLWidgets.widget({
                     return out;
                 };
 
+                // Track whether a lasso is in progress so a progressive lasso's native
+                // (displayed-subset) 'select' doesn't override the kernel's full-region
+                // result. Cleared a tick after lassoEnd so the lasso's 'select' is caught.
+                let lassoActive = false;
+                try {
+                    const uLS = plot.subscribe('lassoStart', () => { lassoActive = true; });
+                    const uLE = plot.subscribe('lassoEnd', () => { setTimeout(() => { lassoActive = false; }, 0); });
+                    window.__spUnsubscribers[plotId].push(uLS, uLE);
+                } catch (e) {}
+
                 const unsubSelect = plot.subscribe('select', ({ points: sel }) => {
                     const indices = Array.from(sel);
+                    // Progressive LASSO: the kernel (sp-lasso) selects ALL original cells
+                    // in the region; don't let this displayed-subset 'select' shrink it.
+                    // A click (no lasso) still reports normally.
+                    if (xData.detailOnZoom && lassoActive) return;
                     reportSelection(indices);
                     // progressive panels sync cross-panel via the kernel (sp-lasso,
                     // original-cell); the positional JS mirror would use a stale order.
