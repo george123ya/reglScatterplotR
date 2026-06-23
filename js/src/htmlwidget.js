@@ -2148,10 +2148,11 @@ HTMLWidgets.widget({
                         resetView();
                     });
                 }
-                // Wheel model: scroll over a DATA POINT zooms (no modifier needed);
-                // scroll over EMPTY space scrolls the page. We toggle regl's
-                // `cameraIsFixed` — when fixed it doesn't preventDefault on wheel, so
-                // the browser scrolls natively (and we forward for the static iframe).
+                // Wheel model: scroll anywhere INSIDE THE AXES (over the canvas) zooms
+                // (no modifier); scroll OUTSIDE the plot area (margins / axis labels)
+                // scrolls the page. We toggle regl's `cameraIsFixed` — when fixed it
+                // doesn't preventDefault on wheel, so the browser scrolls natively (and
+                // we forward for the static iframe).
                 if (container && !container.__rsWheel) {
                     container.__rsWheel = true;
                     let curFixed = false;
@@ -2160,20 +2161,18 @@ HTMLWidgets.widget({
                         curFixed = v;
                         try { plot.set({ cameraIsFixed: v }); } catch (err) {}
                     };
-                    // Track whether the cursor is over a point (regl's hover pick).
-                    let overData = false;
-                    try {
-                        const uOver = plot.subscribe('pointover', () => { overData = true; });
-                        const uOut = plot.subscribe('pointout', () => { overData = false; });
-                        if (window.__spUnsubscribers && window.__spUnsubscribers[plotId])
-                            window.__spUnsubscribers[plotId].push(uOver, uOut);
-                    } catch (err) {}
                     container.addEventListener('wheel', (e) => {
-                        const zoom = overData;      // over a point -> zoom; empty -> page scroll
-                        setFixed(!zoom);
-                        if (zoom) return;           // let regl zoom toward the cursor
-                        // empty space: scroll the page. Live widget (no iframe) bubbles
-                        // natively (cameraIsFixed -> regl doesn't preventDefault). The
+                        // inside the plotting area (the canvas, bounded by the axes)?
+                        let overPlot = false;
+                        try {
+                            const r = canvas.getBoundingClientRect();
+                            overPlot = e.clientX >= r.left && e.clientX <= r.right &&
+                                       e.clientY >= r.top && e.clientY <= r.bottom;
+                        } catch (err) {}
+                        setFixed(!overPlot);
+                        if (overPlot) return;       // let regl zoom toward the cursor
+                        // outside the plot area: scroll the page. Live widget (no iframe)
+                        // bubbles natively (cameraIsFixed -> no preventDefault). The
                         // STATIC <iframe> latches the gesture, so forward it to the
                         // notebook's scroll container.
                         let fe = null; try { fe = window.frameElement; } catch (err) {}
