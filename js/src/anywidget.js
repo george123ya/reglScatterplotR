@@ -131,6 +131,14 @@ function mount(el, model) {
   };
   container.addEventListener("sp-legendfilter", onLegendFilter);
 
+  // Range-slider filter (progressive) -> kernel computes the kept set over the FULL
+  // dataset (vp["full_filter"]), so w.filtered reflects every in-range cell.
+  const onRangeFilter = (ev) => {
+    bumpWork();
+    try { model.send({ type: "range_filter", ranges: ev.detail.ranges }); } catch (e) {}
+  };
+  container.addEventListener("sp-rangefilter", onRangeFilter);
+
   // Progressive deselect: clear the kernel's logical selection in-band (FIFO with
   // viewport messages) and push a clearing vp_select [] to every linked panel, so a
   // queued pan/zoom can't re-apply the just-cleared selection.
@@ -173,6 +181,7 @@ function mount(el, model) {
     container.removeEventListener("sp-viewport", onViewport);
     container.removeEventListener("sp-lasso", onLasso);
     container.removeEventListener("sp-legendfilter", onLegendFilter);
+    container.removeEventListener("sp-rangefilter", onRangeFilter);
     container.removeEventListener("sp-deselect", onDeselect);
     model.off("msg:custom", onMsg);
     model.off("change:_selection", onModelSel);

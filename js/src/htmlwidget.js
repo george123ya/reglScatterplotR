@@ -546,7 +546,16 @@ function createFilterPanel(container, entry, fontSize, margins) {
             else entry.activeStrainers[key] = range;
             // sync the SAME slider on linked panels (same variable = same data)
             syncStrainerToGroup(entry, key, range);
-            recalcAndApplyFilters(entry);   // applyGroupFilter applies the intersected result to all
+            if (entry.detailOnZoom) {
+                // progressive: the kernel computes the kept set over the FULL dataset
+                // (vp["full_filter"]) and intersects it with any legend filter, so
+                // w.filtered + the drawn cells reflect EVERY in-range cell, not just
+                // the displayed subset. Send all active range sliders.
+                try { container.dispatchEvent(new CustomEvent('sp-rangefilter',
+                    { detail: { plotId: plotId, ranges: entry.activeStrainers }, bubbles: false })); } catch (e) {}
+            } else {
+                recalcAndApplyFilters(entry);   // applyGroupFilter applies the intersected result to all
+            }
         };
 
         const startDrag = (which) => (ev) => {
