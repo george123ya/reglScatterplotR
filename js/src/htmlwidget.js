@@ -2123,13 +2123,17 @@ HTMLWidgets.widget({
                         }
                     }
                     if (initialView) newConf.cameraView = initialView;
-                    // scanpy-style add_outline: a crisp ring + background gap behind
-                    // every point, using the engine's antialiased outline passes (the
-                    // same look as a selection). outlineColor = the outer-ring colour.
+                    // scanpy-style add_outline: a two-band ring on every point — an
+                    // outer OUTLINE band and an inner GAP (background) band, each its
+                    // own colour/width — via the sp- shader patch (spOutline uniforms).
                     if (xData.addOutline) {
-                        newConf.outlineAllPoints = true;
-                        if (xData.outlineAllWidth != null) newConf.outlineAllWidth = xData.outlineAllWidth;
-                        if (xData.outlineColor) newConf.pointColorActive = xData.outlineColor;
+                        if (xData.spOutline) {
+                            newConf.spOutline = xData.spOutline;   // {width, gap, color[], gapColor[]}
+                        } else {                                   // legacy single ring
+                            newConf.outlineAllPoints = true;
+                            if (xData.outlineAllWidth != null) newConf.outlineAllWidth = xData.outlineAllWidth;
+                            if (xData.outlineColor) newConf.pointColorActive = xData.outlineColor;
+                        }
                     }
                     plot.set(newConf);
                     if (xData.autoFit && !initialView) plot.zoomToArea({ x: -1.08, y: -1.08, width: 2.16, height: 2.16 }, { transition: false });
@@ -2630,6 +2634,10 @@ HTMLWidgets.widget({
                     if (!xData.detailOnZoom) {
                         mirrorToGroup((pl, e) => {
                             const tgt = mapSelToPanel(indices, e);   // map by ORIGINAL cell
+                            // track it on the sibling too, else a filter on that panel
+                            // can't restore the selection when cleared (it only knows
+                            // its own entry.selectedIndices).
+                            e.selectedIndices = tgt;
                             tgt.length ? pl.select(tgt, { preventEvent: true })
                                        : pl.deselect({ preventEvent: true });
                         });
@@ -2639,7 +2647,7 @@ HTMLWidgets.widget({
 
                 const unsubDeselect = plot.subscribe('deselect', () => {
                     reportSelection([]);
-                    mirrorToGroup(pl => pl.deselect({ preventEvent: true }));
+                    mirrorToGroup((pl, e) => { e.selectedIndices = []; pl.deselect({ preventEvent: true }); });
                     // progressive: ALSO clear the kernel's logical selection in-band
                     // (same FIFO channel as viewport messages), dispatched LAST so the
                     // kernel's clearing vp_select [] arrives after any queued pan/zoom's
