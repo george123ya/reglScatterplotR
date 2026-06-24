@@ -157,6 +157,8 @@ function mount(el, model) {
       inst.updateData(content, buffers);   // vp_update / vp_overview / vp_select / vp_noop (+ binary buffers)
     } else if (content.type === "hl" && typeof inst.setHighlight === "function") {
       inst.setHighlight(content);          // persistent highlight (mark points)
+    } else if (content.type === "morph" && typeof inst.morphTo === "function") {
+      inst.morphTo(content, buffers);      // animate to another embedding (UMAP <-> spatial)
     }
   };
   model.on("msg:custom", onMsg);

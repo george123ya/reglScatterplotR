@@ -2874,6 +2874,37 @@ HTMLWidgets.widget({
                 const e = globalRegistry.get(plotId);
                 return (e && e.selectedIndices) || [];
             },
+            // Animate the point cloud to another embedding (UMAP <-> spatial). The
+            // kernel sends the target x/y (u16, in draw order) + the new axis domain;
+            // regl tweens positions via a transitioned draw. Colours/sizes are kept.
+            morphTo: function(msg, buffers) {
+                if (!plot || !msg || !buffers || buffers.length < 2) return;
+                const X = decodeChannel(buffers[0], 'u16');
+                const Y = decodeChannel(buffers[1], 'u16');
+                if (!X || !Y) return;
+                const m = Math.min(X.length, Y.length, n);
+                dataBuffers.x = X; dataBuffers.y = Y;
+                const e = globalRegistry.get(plotId);
+                if (e) { e.xData = X; e.yData = Y; }
+                const Z = dataBuffers.z, W = dataBuffers.w;
+                const pts = new Array(m);
+                if (W) { for (let i=0;i<m;i++) pts[i] = [X[i], Y[i], Z?Z[i]:0, W[i]]; }
+                else if (Z) { for (let i=0;i<m;i++) pts[i] = [X[i], Y[i], Z[i]]; }
+                else { for (let i=0;i<m;i++) pts[i] = [X[i], Y[i]]; }
+                // adopt the new embedding's data domain + axis labels (hover/axes)
+                if (msg.x_min != null) { xDomainOrig = [msg.x_min, msg.x_max]; yDomainOrig = [msg.y_min, msg.y_max]; }
+                try {
+                    if (svg) {
+                        if (msg.xlab) svg.select('.x-label').text(msg.xlab);
+                        if (msg.ylab) svg.select('.y-label').text(msg.ylab);
+                    }
+                } catch (e2) {}
+                const dur = (msg.duration != null) ? msg.duration : 1200;
+                try { plot.draw(pts, { transition: true, transitionDuration: dur }); } catch (e2) {}
+                if (typeof updateAxesFromCamera === 'function') {
+                    try { updateAxesFromCamera(); } catch (e2) {}
+                }
+            },
             // Persistent highlight: mark points with the engine's crisp ring + size
             // bump (patched into regl-scatterplot), independent of the selection so
             // it survives double-click / new lasso. positions are POSITIONAL indices
