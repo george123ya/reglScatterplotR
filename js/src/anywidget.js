@@ -148,6 +148,18 @@ function mount(el, model) {
   };
   container.addEventListener("sp-deselect", onDeselect);
 
+  // Legend colorpicker recolour -> sync the categorical palette back so w.colors
+  // reflects it (and so to_html exports the edited colours).
+  const onRecolor = (ev) => {
+    try {
+      model.set("_legend_colors", ev.detail.colors || []);
+      model.set("_legend_names", ev.detail.names || []);
+      model.save_changes();
+      bumpGen();   // so a w.colors read waits for this edit
+    } catch (e) {}
+  };
+  container.addEventListener("sp-recolor", onRecolor);
+
   // Kernel pushes new in-view points (detail-on-zoom) -> swap them on the existing
   // plot via plot.draw (no re-render / no spinner). A custom message, NOT a _spec
   // change, so the widget never re-mounts.
@@ -185,6 +197,7 @@ function mount(el, model) {
     container.removeEventListener("sp-legendfilter", onLegendFilter);
     container.removeEventListener("sp-rangefilter", onRangeFilter);
     container.removeEventListener("sp-deselect", onDeselect);
+    container.removeEventListener("sp-recolor", onRecolor);
     model.off("msg:custom", onMsg);
     model.off("change:_selection", onModelSel);
     container.remove();

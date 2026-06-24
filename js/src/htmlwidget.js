@@ -1265,6 +1265,10 @@ HTMLWidgets.widget({
                         legendData.colors[i] = newHex;
                         swatch.style.backgroundColor = newHex;
                         plot.set({ pointColor: [...legendData.colors] });
+                        // sync the recolour back to the kernel so w.colors reflects it
+                        try { container.dispatchEvent(new CustomEvent('sp-recolor',
+                            { detail: { plotId: plotId, names: [...legendData.names],
+                                        colors: [...legendData.colors] }, bubbles: false })); } catch (e) {}
                         if (window.Shiny && window.Shiny.setInputValue) {
                             window.Shiny.setInputValue('sp_color_change', {
                                 variable: legendData.var_name,
@@ -2900,7 +2904,12 @@ HTMLWidgets.widget({
                     }
                 } catch (e2) {}
                 const dur = (msg.duration != null) ? msg.duration : 1200;
-                try { plot.draw(pts, { transition: true, transitionDuration: dur }); } catch (e2) {}
+                // regl only transitions when the point count is unchanged; fall back
+                // to a plain (instant) draw if the transitioned draw is rejected.
+                try {
+                    const p = plot.draw(pts, { transition: true, transitionDuration: dur });
+                    if (p && typeof p.catch === 'function') p.catch(() => { try { plot.draw(pts); } catch (e3) {} });
+                } catch (e2) { try { plot.draw(pts); } catch (e3) {} }
                 if (typeof updateAxesFromCamera === 'function') {
                     try { updateAxesFromCamera(); } catch (e2) {}
                 }
