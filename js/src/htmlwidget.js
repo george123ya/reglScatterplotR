@@ -2882,10 +2882,12 @@ HTMLWidgets.widget({
             // kernel sends the target x/y (u16, in draw order) + the new axis domain;
             // regl tweens positions via a transitioned draw. Colours/sizes are kept.
             morphTo: function(msg, buffers) {
-                if (!plot || !msg || !buffers || buffers.length < 2) return;
+                console.log('[rs morph] called', { hasPlot: !!plot, nBuffers: buffers && buffers.length, n: n, msg: msg });
+                if (!plot || !msg || !buffers || buffers.length < 2) { console.warn('[rs morph] missing plot/buffers'); return; }
                 const X = decodeChannel(buffers[0], 'u16');
                 const Y = decodeChannel(buffers[1], 'u16');
-                if (!X || !Y) return;
+                console.log('[rs morph] decoded', { xlen: X && X.length, ylen: Y && Y.length, x0: X && X[0], y0: Y && Y[0] });
+                if (!X || !Y) { console.warn('[rs morph] decode failed'); return; }
                 const m = Math.min(X.length, Y.length, n);
                 dataBuffers.x = X; dataBuffers.y = Y;
                 const e = globalRegistry.get(plotId);
@@ -2904,12 +2906,16 @@ HTMLWidgets.widget({
                     }
                 } catch (e2) {}
                 const dur = (msg.duration != null) ? msg.duration : 1200;
+                console.log('[rs morph] drawing', pts.length, 'points, transition', dur);
                 // regl only transitions when the point count is unchanged; fall back
                 // to a plain (instant) draw if the transitioned draw is rejected.
                 try {
                     const p = plot.draw(pts, { transition: true, transitionDuration: dur });
-                    if (p && typeof p.catch === 'function') p.catch(() => { try { plot.draw(pts); } catch (e3) {} });
-                } catch (e2) { try { plot.draw(pts); } catch (e3) {} }
+                    if (p && typeof p.then === 'function') {
+                        p.then(() => console.log('[rs morph] draw resolved'))
+                         .catch((err) => { console.warn('[rs morph] transition draw rejected, retrying plain', err); try { plot.draw(pts); } catch (e3) {} });
+                    }
+                } catch (e2) { console.warn('[rs morph] draw threw, retrying plain', e2); try { plot.draw(pts); } catch (e3) {} }
                 if (typeof updateAxesFromCamera === 'function') {
                     try { updateAxesFromCamera(); } catch (e2) {}
                 }
