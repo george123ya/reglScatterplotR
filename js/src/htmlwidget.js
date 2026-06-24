@@ -2408,14 +2408,18 @@ HTMLWidgets.widget({
                     syncGroup = globalRegistry.currentSyncGroupSet;
                 }
                 // Client-side sync (no Shiny): when `syncPlots` lists this plot
-                // and others, union them all into one shared group so panning /
-                // zooming any one drives the rest. In Shiny this is normally set
-                // up by the `my_scatterplot_sync` message handler instead.
+                // and others, group THOSE plots so panning / zooming any one drives
+                // the rest. Each compose() call has its OWN unique id list, so the
+                // group is built from JUST this plot's syncPlots — NEVER the global
+                // currentSyncGroupSet, which would merge separate grids (e.g. two
+                // grids from different cells all syncing together).
                 if (!syncGroup && Array.isArray(xData.syncPlots) && xData.syncPlots.length > 1 &&
                     xData.syncPlots.indexOf(plotId) !== -1) {
-                    syncGroup = globalRegistry.currentSyncGroupSet || new Set();
+                    // reuse the Set a same-grid sibling already built, else a fresh one.
+                    const sib = xData.syncPlots.map(id => globalRegistry.get(id))
+                                               .find(e => e && e.syncGroup);
+                    syncGroup = (sib && sib.syncGroup) || new Set(xData.syncPlots);
                     xData.syncPlots.forEach(id => syncGroup.add(id));
-                    globalRegistry.currentSyncGroupSet = syncGroup;
                     globalRegistry.globalSyncEnabled = true;
                     // Back-fill any plots in this group that already registered.
                     xData.syncPlots.forEach(id => {
