@@ -5,6 +5,9 @@
   with new points is never dropped. `renderValue` runs one render at a time,
   so two quick re-renders no longer leave two plots on one canvas.
 * Remove leftover debug logging from the embedding morph.
+* Double-click now works like plotly: the first double-click clears the
+  selection and keeps the view; the next one resets the view. Before, it
+  always reset the view, and only Escape cleared the selection.
 
 # reglScatterplot 0.99.4
 

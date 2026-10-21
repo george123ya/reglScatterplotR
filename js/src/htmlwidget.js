@@ -2173,7 +2173,11 @@ HTMLWidgets.widget({
                         // Build the KDBush spatial index (lasso/hover hit-testing) in a
                         // Web Worker so it doesn't block/freeze the main thread on large
                         // data — regl-scatterplot builds it eagerly on every draw().
-                        spatialIndexUseWorker: true
+                        spatialIndexUseWorker: true,
+                        // Our own dblclick handler decides between "clear selection"
+                        // and "reset view" (plotly style); regl's built-in deselect
+                        // would run first and make every double-click do both.
+                        deselectOnDblClick: false
                     });
                     const newConf = { pointSize: xData.options.size, pointColor: xData.options.pointColor, opacity: xData.options.opacity };
                     newConf.colorBy = xData.options.colorBy ? xData.options.colorBy : null;
@@ -2245,7 +2249,7 @@ HTMLWidgets.widget({
                         if (xData.detailOnZoom) {
                             _vpSeq++;   // invalidate any in-flight detail responses first
                             const ent2 = globalRegistry.get(plotId);
-                            // reset the VIEW only — keep the selection (Escape clears it).
+                            // reset the VIEW only — keep the selection (double-click / Escape clear it).
                             // The kernel snap-back re-applies the current selection.
                             if (ent2 && ent2._overview && instance && instance.updateData) {
                                 try { instance.updateData({ type: 'vp_overview' }); } catch (e) {}
@@ -2259,12 +2263,29 @@ HTMLWidgets.widget({
                         }
                     } catch (err) {}
                 };
-                // Double-click resets the view (zoom) — selection is kept; Escape clears it.
+                // Is anything selected on this plot (incl. the progressive kernel selection)?
+                const hasSelection = () => {
+                    const e0 = globalRegistry.get(plotId);
+                    return !!(e0 && ((e0.selectedIndices && e0.selectedIndices.length) ||
+                        (e0._vp && e0._vp.sel && e0._vp.sel.size)));
+                };
+                // Double-click works like plotly: the first one clears the selection
+                // (if there is one), the next one resets the view. Escape also clears.
+                // A double-click is also two single clicks, and a click on a point
+                // selects it, so we look at the selection from BEFORE the first click
+                // and always clear whatever the clicks themselves selected.
                 if (canvas && !canvas.__rsDbl) {
                     canvas.__rsDbl = true;
+                    let hadSelection = false;
+                    canvas.addEventListener('mousedown', (e) => {
+                        if (e.detail === 1) hadSelection = hasSelection();
+                    }, true);
                     canvas.addEventListener('dblclick', (e) => {
                         e.preventDefault();
-                        resetView();
+                        if (plot && !plot._destroyed) {
+                            try { plot.deselect(); } catch (err) {}   // fires events -> clears local + kernel + group
+                        }
+                        if (!hadSelection) resetView();
                     });
                 }
                 // Escape (while hovering this plot, and only if something is selected)
@@ -2277,10 +2298,7 @@ HTMLWidgets.widget({
                     canvas.addEventListener('mouseleave', () => { overCanvas = false; });
                     document.addEventListener('keydown', (e) => {
                         if (e.key !== 'Escape' || !overCanvas || !plot || plot._destroyed) return;
-                        const e0 = globalRegistry.get(plotId);
-                        const hasSel = e0 && ((e0.selectedIndices && e0.selectedIndices.length) ||
-                            (e0._vp && e0._vp.sel && e0._vp.sel.size));
-                        if (!hasSel) return;        // nothing to clear -> let Jupyter handle Escape
+                        if (!hasSelection()) return;   // nothing to clear -> let Jupyter handle Escape
                         try { plot.deselect(); } catch (err) {}   // fires events -> clears local + kernel + group
                         e.preventDefault(); e.stopPropagation();
                     });
