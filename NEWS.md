@@ -1,3 +1,8 @@
+# reglScatterplot 0.99.6
+
+* `inst/CITATION` is now plain ASCII, so `utils::readCitationFile()` can read
+  it without the package metadata (fixes a BiocCheck warning).
+
 # reglScatterplot 0.99.5
 
 * Fix stale or flickering plots after a data change or resize (#2, reported

@@ -3,7 +3,7 @@ citHeader("To cite the reglScatterplotR package, please use:")
 bibentry(
     bibtype = "Manual",
     title   = "reglScatterplotR: Interactive WebGL Scatterplots for Biological Data Exploration",
-    author  = person("George", "Muñoz"),
+    author  = person("George", "Mu\u00f1oz"),
     year    = format(Sys.Date(), "%Y"),
     note    = sprintf("R package version %s",
                       if (!is.null(meta$Version)) meta$Version else "unknown"),
