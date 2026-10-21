@@ -98,6 +98,42 @@ const decodeBase64 = (base64Str) => {
     return new Float32Array(base64Str);
 };
 
+// regl-scatterplot's draw() is async and REJECTS any call made while a previous
+// draw is still running, dropping that call's points. A dropped draw that
+// carried new points leaves the old data on screen. Every draw goes through
+// here: one draw at a time per plot; calls made meanwhile merge into ONE
+// follow-up draw with the newest points. Resolves to true if the last draw
+// succeeded, false if it failed (the error is logged, not thrown).
+function safeDraw(plot, points, opts) {
+    if (!plot) return Promise.resolve(false);
+    if (plot.__drawBusy) {
+        if (points !== undefined) {
+            plot.__pendingPoints = points;
+            plot.__pendingOpts = opts;
+        }
+        plot.__drawPending = true;
+        return plot.__drawPromise;
+    }
+    plot.__drawBusy = true;
+    const p = Promise.resolve()
+        .then(() => plot.draw(points, opts))
+        .then(() => true, (err) => {
+            console.warn('[reglScatterplot] draw failed:', err);
+            return false;
+        })
+        .then((ok) => {
+            plot.__drawBusy = false;
+            if (!plot.__drawPending) return ok;
+            plot.__drawPending = false;
+            const pp = plot.__pendingPoints, po = plot.__pendingOpts;
+            plot.__pendingPoints = undefined;
+            plot.__pendingOpts = undefined;
+            return safeDraw(plot, pp, po);
+        });
+    plot.__drawPromise = p;
+    return p;
+}
+
 // Decode a channel that arrived as RAW BINARY (a DataView/ArrayBuffer from a
 // Jupyter comm buffer — the experimental fast path), applying the channel's
 // known transform. mode: 'u16' (x/y bipolar), 'u16u' (continuous 0..1),
@@ -701,7 +737,7 @@ if (typeof Shiny !== 'undefined') {
       if (entry.xData && entry.yData && entry.zData) {
          const points = new Array(n);
          for(let i=0; i<n; i++) points[i] = [entry.xData[i], entry.yData[i], entry.zData[i]];
-         entry.plot.draw(points);
+         safeDraw(entry.plot, points);
       }
       recalcAndApplyFilters(entry);
   });
@@ -971,6 +1007,8 @@ HTMLWidgets.widget({
 
         let plot, renderer, svg, xAxisG, yAxisG, xAxis, yAxis, xScale, yScale;
         let lastXData = null;   // last spec, for re-rendering after context loss
+        // renderValue serialization state (see renderValue below).
+        let rvRunning = false, rvPending = false, rvLatest = null, rvPromise = null;
         let xDomainOrig, yDomainOrig, tooltip, titleDiv, captionDiv;
         let d3Available = false;
         let dataBuffers = { x: null, y: null, z: null, w: null };
@@ -1841,7 +1879,7 @@ HTMLWidgets.widget({
                     // AWAIT the draw: plot.draw resolves only after the new points
                     // (and spatial index) are in place. Selecting before it settles
                     // applies the indices to the OLD points -> random highlights.
-                    await entry.plot.draw(pts);
+                    await safeDraw(entry.plot, pts);
                     try {
                         if (_sel.length) entry.plot.select(_sel, { preventEvent: true });
                         else entry.plot.deselect({ preventEvent: true });
@@ -1860,7 +1898,32 @@ HTMLWidgets.widget({
                     try { loader.style.display = 'none'; } catch (e) {}   // detail fetch done
                 } catch (e) { console.error('[reglScatterplot] updateData failed', e); }
             },
-            renderValue: async function(xData) {
+            // renderValue awaits the first draw before it registers the new plot
+            // in globalRegistry. Two renders arriving close together (e.g. a
+            // Shiny input that invalidates the output twice) therefore both
+            // found no plot to destroy, and both created a plot on this canvas.
+            // Both stayed alive and redrew their own points on mouse events, so
+            // the figure flickered between old and new data. Run one render at
+            // a time; if more arrive meanwhile, only the NEWEST runs next.
+            renderValue: function(xData) {
+                rvLatest = xData;
+                if (rvRunning) { rvPending = true; return rvPromise; }
+                rvRunning = true;
+                rvPromise = (async () => {
+                    try {
+                        do {
+                            rvPending = false;
+                            try { await instance._renderValueImpl(rvLatest); }
+                            catch (err) { console.error('[SP-ERROR] renderValue failed:', err); }
+                        } while (rvPending);
+                    } finally {
+                        rvRunning = false;
+                    }
+                })();
+                return rvPromise;
+            },
+
+            _renderValueImpl: async function(xData) {
                 lastXData = xData;   // remembered so we can re-render after a WebGL context loss
                 if (typeof xData.syncState !== 'undefined') {
                     globalRegistry.globalSyncEnabled = xData.syncState;
@@ -2145,7 +2208,7 @@ HTMLWidgets.widget({
                     if (dataBuffers.w) { const zb = dataBuffers.z; for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i], zb ? zb[i] : 0, dataBuffers.w[i]]; }
                     else if (dataBuffers.z) { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i], dataBuffers.z[i]]; }
                     else { for(let i=0; i<n; i++) points[i] = [dataBuffers.x[i], dataBuffers.y[i]]; }
-                    await plot.draw(points);
+                    if (!(await safeDraw(plot, points))) throw new Error('draw failed');
                 } catch (err) {
                     console.error("[SP-ERROR] Plot render failed (Context Lost?):", err);
                     clearTimeout(_loaderTimer);
@@ -2882,12 +2945,10 @@ HTMLWidgets.widget({
             // kernel sends the target x/y (u16, in draw order) + the new axis domain;
             // regl tweens positions via a transitioned draw. Colours/sizes are kept.
             morphTo: function(msg, buffers) {
-                console.log('[rs morph] called', { hasPlot: !!plot, nBuffers: buffers && buffers.length, n: n, msg: msg });
-                if (!plot || !msg || !buffers || buffers.length < 2) { console.warn('[rs morph] missing plot/buffers'); return; }
+                if (!plot || !msg || !buffers || buffers.length < 2) return;
                 const X = decodeChannel(buffers[0], 'u16');
                 const Y = decodeChannel(buffers[1], 'u16');
-                console.log('[rs morph] decoded', { xlen: X && X.length, ylen: Y && Y.length, x0: X && X[0], y0: Y && Y[0] });
-                if (!X || !Y) { console.warn('[rs morph] decode failed'); return; }
+                if (!X || !Y) { console.warn('[reglScatterplot] morph: could not decode coordinates'); return; }
                 const m = Math.min(X.length, Y.length, n);
                 dataBuffers.x = X; dataBuffers.y = Y;
                 const e = globalRegistry.get(plotId);
@@ -2906,16 +2967,11 @@ HTMLWidgets.widget({
                     }
                 } catch (e2) {}
                 const dur = (msg.duration != null) ? msg.duration : 1200;
-                console.log('[rs morph] drawing', pts.length, 'points, transition', dur);
                 // regl only transitions when the point count is unchanged; fall back
-                // to a plain (instant) draw if the transitioned draw is rejected.
-                try {
-                    const p = plot.draw(pts, { transition: true, transitionDuration: dur });
-                    if (p && typeof p.then === 'function') {
-                        p.then(() => console.log('[rs morph] draw resolved'))
-                         .catch((err) => { console.warn('[rs morph] transition draw rejected, retrying plain', err); try { plot.draw(pts); } catch (e3) {} });
-                    }
-                } catch (e2) { console.warn('[rs morph] draw threw, retrying plain', e2); try { plot.draw(pts); } catch (e3) {} }
+                // to a plain (instant) draw if the transitioned draw fails.
+                const morphPlot = plot;
+                safeDraw(morphPlot, pts, { transition: true, transitionDuration: dur })
+                    .then((ok) => { if (!ok) return safeDraw(morphPlot, pts); });
                 if (typeof updateAxesFromCamera === 'function') {
                     try { updateAxesFromCamera(); } catch (e2) {}
                 }
@@ -2987,7 +3043,7 @@ HTMLWidgets.widget({
                 if (entry?.updateAxesFromCamera) entry.updateAxesFromCamera();
 
                 // Force redraw
-                requestAnimationFrame(() => { try { plot.draw(); } catch(e) {} });
+                requestAnimationFrame(() => { safeDraw(plot); });
             }
         };
         instanceResize = instance.resize;

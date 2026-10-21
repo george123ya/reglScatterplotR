@@ -1,3 +1,11 @@
+# reglScatterplot 0.99.5
+
+* Fix stale or flickering plots after a data change or resize (#2, reported
+  by @baj12). All `draw()` calls now run one at a time per plot, so a draw
+  with new points is never dropped. `renderValue` runs one render at a time,
+  so two quick re-renders no longer leave two plots on one canvas.
+* Remove leftover debug logging from the embedding morph.
+
 # reglScatterplot 0.99.4
 
 * Changes from the Bioconductor review.

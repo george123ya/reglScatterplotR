@@ -170,7 +170,6 @@ function mount(el, model) {
     } else if (content.type === "hl" && typeof inst.setHighlight === "function") {
       inst.setHighlight(content);          // persistent highlight (mark points)
     } else if (content.type === "morph") {
-      console.log("[rs morph] message received", { hasMorphTo: typeof inst.morphTo, nBuffers: buffers && buffers.length });
       if (typeof inst.morphTo === "function") inst.morphTo(content, buffers);   // animate to another embedding
     }
   };
