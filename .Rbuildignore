@@ -13,10 +13,6 @@
 ^CRAN-RELEASE$
 ^codecov\.yml$
 ^LICENSE\.md$
-^dev$
 ^data-raw$
 ^js$
-^wiki$
 ^.*\.BiocCheck$
-^notebooks$
-^SHOTLIST\.md$

@@ -3,7 +3,7 @@
 ## ----------------------------------------------------------------------------
 ##
 ## The main `reglScatterplot()` constructor detects `Seurat` objects and routes
-## through `.reglScatterplotFromSeurat()`, which pulls coordinates from a
+## through `.inputFromSeurat()`, which pulls coordinates from a
 ## dimensional reduction (`Embeddings()`) and resolves `colorBy` / `groupBy`
 ## against `meta.data` columns or feature expression via `FetchData()`.
 ##
@@ -85,27 +85,20 @@
     vec
 }
 
-## Top-level dispatch helper invoked from `reglScatterplot()` when `data` is a
-## Seurat object. `assay` is reinterpreted as the Seurat *layer* (the matrix to
-## read for feature colouring) - "data" (log-normalised) by default, the
-## analogue of `logcounts` for SCE - while the Seurat *assay* (RNA/ADT/...) is
-## taken from `DefaultAssay()` unless `seuratAssay` is supplied via `...`.
-.reglScatterplotFromSeurat <- function(object,
-                                       dimred = "UMAP",
-                                       colorBy = NULL,
-                                       groupBy = NULL,
-                                       assay = NULL,
-                                       seuratAssay = NULL,
-                                       xlab = NULL,
-                                       ylab = NULL,
-                                       legendTitle = NULL,
-                                       ...) {
+## Internal: adapter called by `.resolveInput()` for Seurat inputs. `assay`
+## is reinterpreted as the Seurat *layer* (the matrix read for feature
+## colouring): "data" (log-normalised) by default, the analogue of
+## `logcounts` for SCE. The Seurat *assay* (RNA/ADT/...) is taken from
+## `DefaultAssay()` unless `seuratAssay` is given.
+.inputFromSeurat <- function(object, dimred = "UMAP", colorBy = NULL,
+                             groupBy = NULL, assay = NULL,
+                             seuratAssay = NULL, xlab = NULL, ylab = NULL,
+                             legendTitle = NULL) {
     if (!requireNamespace("SeuratObject", quietly = TRUE)) {
         stop("Install 'SeuratObject' (or 'Seurat') to plot Seurat objects.",
             call. = FALSE
         )
     }
-
     reduction <- .resolveSeuratReduction(object, dimred)
     coords <- SeuratObject::Embeddings(object, reduction = reduction)
     if (ncol(coords) < 2L) {
@@ -113,27 +106,13 @@
             reduction
         ), call. = FALSE)
     }
-
-    ## `assay` (SCE-style name) -> Seurat layer; default "data" (lognorm).
     layer <- assay %||% "data"
-    color_vec <- .colorFromSeurat(object, colorBy, layer, seuratAssay)
-    group_vec <- .colorFromSeurat(object, groupBy, layer, seuratAssay)
-
-    if (is.null(xlab)) xlab <- paste0(toupper(reduction), " 1")
-    if (is.null(ylab)) ylab <- paste0(toupper(reduction), " 2")
-    if (is.null(legendTitle) &&
-        is.character(colorBy) && length(colorBy) == 1L) {
-        legendTitle <- colorBy
-    }
-
-    df <- data.frame(.x = coords[, 1L], .y = coords[, 2L])
-    reglScatterplot(
-        data = df,
-        x = ".x", y = ".y",
-        colorBy = color_vec,
-        groupBy = group_vec,
-        xlab = xlab, ylab = ylab,
-        legendTitle = legendTitle,
-        ...
+    .objectInput(coords,
+        color_vec = .colorFromSeurat(object, colorBy, layer, seuratAssay),
+        group_vec = .colorFromSeurat(object, groupBy, layer, seuratAssay),
+        colorBy = colorBy,
+        xlab = xlab %||% paste0(toupper(reduction), " 1"),
+        ylab = ylab %||% paste0(toupper(reduction), " 2"),
+        legendTitle = legendTitle
     )
 }

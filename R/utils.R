@@ -29,12 +29,8 @@ toBase64 <- function(vec) {
     writeBin(vec, con, size = 4)
     raw_data <- rawConnectionValue(con)
     ## jsonlite::base64_enc is C-backed and ~5x faster than base64enc on
-    ## large payloads. Fall back to base64enc when jsonlite isn't loaded.
-    encoded <- if (requireNamespace("jsonlite", quietly = TRUE)) {
-        jsonlite::base64_enc(raw_data)
-    } else {
-        base64enc::base64encode(raw_data)
-    }
+    ## large payloads.
+    encoded <- jsonlite::base64_enc(raw_data)
     paste0("base64:", encoded)
 }
 
@@ -45,11 +41,7 @@ toBase64 <- function(vec) {
     on.exit(close(con), add = TRUE)
     writeBin(ints, con, size = 2L, endian = "little")
     raw_data <- rawConnectionValue(con)
-    encoded <- if (requireNamespace("jsonlite", quietly = TRUE)) {
-        jsonlite::base64_enc(raw_data)
-    } else {
-        base64enc::base64encode(raw_data)
-    }
+    encoded <- jsonlite::base64_enc(raw_data)
     paste0(prefix, encoded)
 }
 

@@ -134,7 +134,6 @@ reglScatterplot(ad, x = "umap", colorBy = "leiden")  # obs column or a gene
 |------------------------------------|------------------------------------------------------|
 | Tour with examples                 | `vignette("reglScatterplot")`                        |
 | Scaling to millions of points      | `vignette("performance")`                            |
-| Wiki: extended recipes             | <https://github.com/george123ya/reglScatterplotR/wiki>|
 | Issue tracker                      | <https://github.com/george123ya/reglScatterplotR/issues>|
 
 ## Performance at a glance

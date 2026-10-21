@@ -1,8 +1,8 @@
 Package: reglScatterplotR
 Type: Package
 Title: Interactive WebGL Scatterplots for Biological Data Exploration
-Version: 0.99.3
-Date: 2026-06-18
+Version: 0.99.4
+Date: 2026-10-21
 Authors@R:
     person(given = "George", family = "Muñoz",
            email = "george.munoz@unmsm.edu.pe",
@@ -26,12 +26,14 @@ biocViews: Software, Visualization, SingleCell, Spatial, GeneExpression,
 Depends:
     R (>= 4.6.0)
 Imports:
+    SingleCellExperiment,
+    SummarizedExperiment,
     htmlwidgets,
-    base64enc,
     jsonlite,
     viridisLite,
     RColorBrewer,
     grDevices,
+    methods,
     stats,
     shiny
 Suggests:
@@ -40,9 +42,7 @@ Suggests:
     rmarkdown,
     markdown,
     BiocStyle,
-    SingleCellExperiment,
     SpatialExperiment,
-    SummarizedExperiment,
     SeuratObject,
     anndataR,
     crosstalk,
@@ -50,4 +50,4 @@ Suggests:
 VignetteBuilder: knitr
 Roxygen: list(markdown = TRUE)
 Config/testthat/edition: 3
-Config/roxygen2/version: 8.0.0
+Config/roxygen2/version: 8.1.0

@@ -101,18 +101,12 @@
     ), call. = FALSE)
 }
 
-## Top-level dispatch helper invoked from `reglScatterplot()` when `data` is an
-## in-memory AnnData. `assay` is reinterpreted as the AnnData *layer* to read
-## for feature colouring (NULL -> `.X`, a layer name, or "raw").
-.reglScatterplotFromAnnData <- function(ad,
-                                        dimred = "UMAP",
-                                        colorBy = NULL,
-                                        groupBy = NULL,
-                                        assay = NULL,
-                                        xlab = NULL,
-                                        ylab = NULL,
-                                        legendTitle = NULL,
-                                        ...) {
+## Internal: adapter called by `.resolveInput()` for in-memory AnnData
+## inputs. `assay` is reinterpreted as the AnnData *layer* to read for
+## feature colouring (NULL -> `.X`, a layer name, or "raw").
+.inputFromAnnData <- function(ad, dimred = "UMAP", colorBy = NULL,
+                              groupBy = NULL, assay = NULL, xlab = NULL,
+                              ylab = NULL, legendTitle = NULL) {
     basis <- .annResolveBasis(ad, dimred)
     coords <- as.matrix(ad$obsm[[basis]])
     if (ncol(coords) < 2L) {
@@ -120,26 +114,13 @@
             call. = FALSE
         )
     }
-
-    color_vec <- .annResolveVec(ad, colorBy, assay)
-    group_vec <- .annResolveVec(ad, groupBy, assay)
-
-    label <- sub("^X_", "", basis)
-    if (is.null(xlab)) xlab <- paste0(toupper(label), " 1")
-    if (is.null(ylab)) ylab <- paste0(toupper(label), " 2")
-    if (is.null(legendTitle) &&
-        is.character(colorBy) && length(colorBy) == 1L) {
-        legendTitle <- colorBy
-    }
-
-    df <- data.frame(.x = coords[, 1L], .y = coords[, 2L])
-    reglScatterplot(
-        data = df,
-        x = ".x", y = ".y",
-        colorBy = color_vec,
-        groupBy = group_vec,
-        xlab = xlab, ylab = ylab,
-        legendTitle = legendTitle,
-        ...
+    label <- toupper(sub("^X_", "", basis))
+    .objectInput(coords,
+        color_vec = .annResolveVec(ad, colorBy, assay),
+        group_vec = .annResolveVec(ad, groupBy, assay),
+        colorBy = colorBy,
+        xlab = xlab %||% paste0(label, " 1"),
+        ylab = ylab %||% paste0(label, " 2"),
+        legendTitle = legendTitle
     )
 }

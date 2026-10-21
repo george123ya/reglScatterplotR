@@ -1,3 +1,18 @@
+# reglScatterplot 0.99.4
+
+* Changes from the Bioconductor review.
+* `SingleCellExperiment` and `SummarizedExperiment` are now in Imports, so
+  plotting a `SingleCellExperiment` or `SpatialExperiment` works out of the
+  box. `SpatialExperiment`, `SeuratObject` and `anndataR` stay optional.
+* NAMESPACE now imports the functions the package uses (`importFrom`).
+* `reglScatterplot()` is split into small helpers: input resolution
+  (`R/input.R`) and payload building (`R/payload.R`). The widget output is
+  unchanged.
+* Removed the unused `base64enc` dependency.
+* Removed non-package files (`wiki/`, `notebooks/`, `dev/`, `SHOTLIST.md`)
+  from the repository root.
+* The vignette now shows a runnable `SingleCellExperiment` example.
+
 # reglScatterplot 0.99.3
 
 * **Selection reporting.** Lasso selections are always reported (Shiny

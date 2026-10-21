@@ -19,4 +19,15 @@
 #' are pulled from a CDN on first use.
 #'
 #' @keywords internal
+#' @importFrom SingleCellExperiment reducedDim reducedDimNames
+#' @importFrom SummarizedExperiment assay assayNames colData
+#' @importFrom methods is
+#' @importFrom htmlwidgets createWidget shinyRenderWidget shinyWidgetOutput
+#'   sizingPolicy
+#' @importFrom jsonlite base64_enc
+#' @importFrom viridisLite viridis magma plasma inferno cividis turbo
+#' @importFrom RColorBrewer brewer.pal brewer.pal.info
+#' @importFrom grDevices col2rgb colorRampPalette rgb
+#' @importFrom stats quantile setNames
+#' @importFrom shiny getDefaultReactiveDomain
 "_PACKAGE"

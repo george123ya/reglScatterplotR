@@ -111,25 +111,41 @@ diverging scale.
 
 # Working with Bioconductor data structures
 
-`reglScatterplot()` accepts any `data.frame`-like object. To plot a UMAP
-embedding stored in a `SingleCellExperiment`, build a small data frame from
-its `reducedDim()` and `colData()` slots:
+`reglScatterplot()` works directly on a `SingleCellExperiment`. Pass the
+name of a `reducedDim()` as `x`. `colorBy` and `groupBy` can name a
+`colData()` column or a gene in `rownames()`. Gene values are read from the
+`logcounts` assay by default; use `assay` to pick another one.
 
-```{r sce, eval = FALSE}
+Here we wrap the bundled example data in a small `SingleCellExperiment`.
+
+```{r sce}
 library(SingleCellExperiment)
-umap <- reducedDim(sce, "UMAP")
-df <- data.frame(
-    UMAP1 = umap[, 1L],
-    UMAP2 = umap[, 2L],
-    cluster = colData(sce)$cluster,
-    nGene = colData(sce)$detected
+data(reglScatterExample)
+ex <- reglScatterExample
+sce <- SingleCellExperiment(
+    assays = list(logcounts = t(as.matrix(ex["CD3D"]))),
+    colData = ex[, c("celltype", "nCount", "percentMito")],
+    reducedDims = list(UMAP = as.matrix(ex[, c("UMAP_1", "UMAP_2")]))
 )
-reglScatterplot(df,
-    x = "UMAP1", y = "UMAP2",
-    colorBy = "cluster",
-    pointLabels = colnames(sce)
-)
+sce
+reglScatterplot(sce, x = "UMAP", colorBy = "celltype")
 ```
+
+Colouring by a gene reads its row from the assay:
+
+```{r sce-gene}
+reglScatterplot(sce, x = "UMAP", colorBy = "CD3D", vmax = "p99")
+```
+
+A `SpatialExperiment` works the same way. Use `x = "spatial"` to plot the
+tissue coordinates from `spatialCoords()`:
+
+```{r spe, eval = FALSE}
+reglScatterplot(spe, x = "spatial", colorBy = "celltype")
+```
+
+`Seurat` objects and in-memory `AnnData` objects (from `anndataR`) are also
+accepted. They need the optional `SeuratObject` and `anndataR` packages.
 
 # Linking plots in Shiny
 

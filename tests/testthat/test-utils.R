@@ -11,7 +11,7 @@ test_that("toBase64 round-trips a numeric vector via base64 Float32", {
     expect_type(enc, "character")
     expect_true(startsWith(enc, "base64:"))
 
-    raw_bytes <- base64enc::base64decode(sub("^base64:", "", enc))
+    raw_bytes <- jsonlite::base64_dec(sub("^base64:", "", enc))
     expect_length(raw_bytes, length(v) * 4L)
 
     con <- rawConnection(raw_bytes, "rb")

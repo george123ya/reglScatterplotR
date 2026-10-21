@@ -217,306 +217,30 @@ reglScatterplot <- function(data = NULL,
                             filteredIndices = NULL,
                             selectedIndices = NULL,
                             syncState = TRUE) {
-    ## ---- crosstalk SharedData ------------------------------------------
     ## Unwrap a crosstalk::SharedData so the plot links (selection + filter)
     ## with other crosstalk widgets (DT, plotly, leaflet) in the same document.
-    crosstalk_key <- NULL
-    crosstalk_group <- NULL
-    if (requireNamespace("crosstalk", quietly = TRUE) &&
-        inherits(data, "SharedData")) {
-        crosstalk_key <- data$key()
-        crosstalk_group <- data$groupName()
-        data <- data$origData()
-    }
+    ct <- .unwrapCrosstalk(data)
 
-    ## ---- plain coordinate matrix dispatch -------------------------------
-    ## A bare numeric matrix (e.g. reducedDim output, `prcomp$x`, a UMAP
-    ## embedding) is the most common "I just have coordinates" case. Take the
-    ## first two columns by default; `x`/`y` may override with column indices
-    ## or names. `colorBy` / `groupBy` stay vectors here.
-    if (!is.null(data) && is.matrix(data) && is.numeric(data)) {
-        if (ncol(data) < 2L) {
-            stop("A coordinate matrix needs at least two columns.",
-                call. = FALSE
-            )
-        }
-        .pickCol <- function(sel, default) {
-            if (missing(sel) || is.null(sel)) {
-                return(data[, default])
-            }
-            if (is.character(sel) && length(sel) == 1L) {
-                if (is.null(colnames(data)) || !sel %in% colnames(data)) {
-                    stop(sprintf("Column '%s' not found in the matrix.", sel),
-                        call. = FALSE
-                    )
-                }
-                return(data[, sel])
-            }
-            if (is.numeric(sel) && length(sel) == 1L) {
-                return(data[, as.integer(sel)])
-            }
-            ## Anything else (a raw vector) is passed straight through.
-            sel
-        }
-        x_in <- if (missing(x)) NULL else x
-        y_in <- if (missing(y)) NULL else y
-        return(reglScatterplot(
-            data = NULL,
-            x = .pickCol(x_in, 1L), y = .pickCol(y_in, 2L),
-            colorBy = colorBy, groupBy = groupBy, assay = assay,
-            filterBy = filterBy,
-            pointSize = pointSize, opacity = opacity, pointColor = pointColor,
-            pixelRatio = pixelRatio,
-            sizeBy = sizeBy, opacityBy = opacityBy, tooltipBy = tooltipBy,
-            categoricalPalette = categoricalPalette,
-            continuousPalette = continuousPalette,
-            customPalette = customPalette, customColors = customColors,
-            pointLabels = pointLabels,
-            xlab = xlab, ylab = ylab, title = title, legendTitle = legendTitle,
-            xrange = xrange, yrange = yrange, rangePadding = rangePadding,
-            vmin = vmin, vmax = vmax, centerZero = centerZero,
-            showAxes = showAxes, showTooltip = showTooltip,
-            backgroundColor = backgroundColor, axisColor = axisColor,
-            legendBg = legendBg, legendText = legendText,
-            legendOpacity = legendOpacity, legendBlur = legendBlur,
-            toolbarPosition = toolbarPosition, zoomOnSelection = zoomOnSelection,
-            legendPosition = legendPosition, draggableLegend = draggableLegend,
-            width = width, height = height, enableDownload = enableDownload,
-            plotId = plotId, syncPlots = syncPlots, elementId = elementId,
-            dataVersion = dataVersion, masterId = masterId, autoFit = autoFit,
-            margins = margins, fontSize = fontSize,
-            legendFontSize = legendFontSize,
-            filteredIndices = filteredIndices,
-            selectedIndices = selectedIndices, syncState = syncState
-        ))
-    }
+    ## Turn any supported input (data.frame, matrix, SingleCellExperiment,
+    ## SpatialExperiment, Seurat, AnnData) into coordinate and colour vectors.
+    inp <- .resolveInput(ct$data,
+        x = if (missing(x)) NULL else x,
+        y = if (missing(y)) NULL else y,
+        colorBy = colorBy, groupBy = groupBy, assay = assay,
+        xlab = xlab, ylab = ylab, legendTitle = legendTitle
+    )
 
-    ## ---- Seurat object dispatch -----------------------------------------
-    if (!is.null(data) && inherits(data, "Seurat")) {
-        reduction <- if (!missing(x) && is.character(x) && length(x) == 1L) {
-            x
-        } else {
-            "UMAP"
-        }
-        return(.reglScatterplotFromSeurat(
-            object = data,
-            dimred = reduction,
-            colorBy = colorBy,
-            groupBy = groupBy,
-            assay = assay,
-            xlab = if (xlab == "X") NULL else xlab,
-            ylab = if (ylab == "Y") NULL else ylab,
-            filterBy = filterBy,
-            pointSize = pointSize, opacity = opacity,
-            pointColor = pointColor,
-            pixelRatio = pixelRatio,
-            sizeBy = sizeBy, opacityBy = opacityBy, tooltipBy = tooltipBy,
-            categoricalPalette = categoricalPalette,
-            continuousPalette = continuousPalette,
-            customPalette = customPalette,
-            customColors = customColors,
-            pointLabels = pointLabels,
-            title = title, legendTitle = legendTitle,
-            xrange = xrange, yrange = yrange,
-            vmin = vmin, vmax = vmax, centerZero = centerZero,
-            showAxes = showAxes, showTooltip = showTooltip,
-            backgroundColor = backgroundColor,
-            axisColor = axisColor,
-            legendBg = legendBg, legendText = legendText,
-            legendOpacity = legendOpacity, legendBlur = legendBlur,
-            toolbarPosition = toolbarPosition, zoomOnSelection = zoomOnSelection,
-            legendPosition = legendPosition,
-            draggableLegend = draggableLegend,
-            width = width, height = height,
-            enableDownload = enableDownload,
-            plotId = plotId, syncPlots = syncPlots,
-            elementId = elementId,
-            dataVersion = dataVersion,
-            masterId = masterId,
-            autoFit = autoFit,
-            margins = margins,
-            fontSize = fontSize, legendFontSize = legendFontSize,
-            filteredIndices = filteredIndices,
-            selectedIndices = selectedIndices,
-            syncState = syncState
-        ))
-    }
+    coords <- .buildCoords(
+        .resolveColumn(inp$x, inp$data), .resolveColumn(inp$y, inp$data),
+        xrange, yrange, rangePadding
+    )
+    perf <- .performanceDefaults(coords$n, pointSize, opacity, pointLabels)
 
-    ## ---- AnnData (in-memory R6) dispatch --------------------------------
-    if (!is.null(data) && .isAnnDataR6(data)) {
-        basis <- if (!missing(x) && is.character(x) && length(x) == 1L) {
-            x
-        } else {
-            "UMAP"
-        }
-        return(.reglScatterplotFromAnnData(
-            ad = data,
-            dimred = basis,
-            colorBy = colorBy,
-            groupBy = groupBy,
-            assay = assay,
-            xlab = if (xlab == "X") NULL else xlab,
-            ylab = if (ylab == "Y") NULL else ylab,
-            filterBy = filterBy,
-            pointSize = pointSize, opacity = opacity,
-            pointColor = pointColor,
-            pixelRatio = pixelRatio,
-            sizeBy = sizeBy, opacityBy = opacityBy, tooltipBy = tooltipBy,
-            categoricalPalette = categoricalPalette,
-            continuousPalette = continuousPalette,
-            customPalette = customPalette,
-            customColors = customColors,
-            pointLabels = pointLabels,
-            title = title, legendTitle = legendTitle,
-            xrange = xrange, yrange = yrange,
-            vmin = vmin, vmax = vmax, centerZero = centerZero,
-            showAxes = showAxes, showTooltip = showTooltip,
-            backgroundColor = backgroundColor,
-            axisColor = axisColor,
-            legendBg = legendBg, legendText = legendText,
-            legendOpacity = legendOpacity, legendBlur = legendBlur,
-            toolbarPosition = toolbarPosition, zoomOnSelection = zoomOnSelection,
-            legendPosition = legendPosition,
-            draggableLegend = draggableLegend,
-            width = width, height = height,
-            enableDownload = enableDownload,
-            plotId = plotId, syncPlots = syncPlots,
-            elementId = elementId,
-            dataVersion = dataVersion,
-            masterId = masterId,
-            autoFit = autoFit,
-            margins = margins,
-            fontSize = fontSize, legendFontSize = legendFontSize,
-            filteredIndices = filteredIndices,
-            selectedIndices = selectedIndices,
-            syncState = syncState
-        ))
-    }
-
-    ## ---- Bioconductor object dispatch -----------------------------------
-    if (!is.null(data) &&
-        (inherits(data, "SingleCellExperiment") ||
-            inherits(data, "SpatialExperiment"))) {
-        ## Resolve `x` as the `dimred` argument (default "UMAP") so the user
-        ## writes reglScatterplot(sce, dimred = "UMAP") and we don't fight
-        ## the existing positional signature.
-        dimred <- if (!missing(x) && is.character(x) && length(x) == 1L) {
-            x
-        } else {
-            "UMAP"
-        }
-        return(.reglScatterplotFromSCE(
-            sce = data,
-            dimred = dimred,
-            colorBy = colorBy,
-            groupBy = groupBy,
-            assay = assay,
-            xlab = if (xlab == "X") NULL else xlab,
-            ylab = if (ylab == "Y") NULL else ylab,
-            ## Forward everything else with explicit names.
-            filterBy = filterBy,
-            pointSize = pointSize, opacity = opacity,
-            pointColor = pointColor,
-            pixelRatio = pixelRatio,
-            sizeBy = sizeBy, opacityBy = opacityBy, tooltipBy = tooltipBy,
-            categoricalPalette = categoricalPalette,
-            continuousPalette = continuousPalette,
-            customPalette = customPalette,
-            customColors = customColors,
-            pointLabels = pointLabels,
-            title = title, legendTitle = legendTitle,
-            xrange = xrange, yrange = yrange,
-            vmin = vmin, vmax = vmax, centerZero = centerZero,
-            showAxes = showAxes, showTooltip = showTooltip,
-            backgroundColor = backgroundColor,
-            axisColor = axisColor,
-            legendBg = legendBg, legendText = legendText,
-            legendOpacity = legendOpacity, legendBlur = legendBlur,
-            toolbarPosition = toolbarPosition, zoomOnSelection = zoomOnSelection,
-            legendPosition = legendPosition,
-            draggableLegend = draggableLegend,
-            width = width, height = height,
-            enableDownload = enableDownload,
-            plotId = plotId, syncPlots = syncPlots,
-            elementId = elementId,
-            dataVersion = dataVersion,
-            masterId = masterId,
-            autoFit = autoFit,
-            margins = margins,
-            fontSize = fontSize, legendFontSize = legendFontSize,
-            filteredIndices = filteredIndices,
-            selectedIndices = selectedIndices,
-            syncState = syncState
-        ))
-    }
-
-    ## ---- data extraction -------------------------------------------------
-    x_vec <- .resolveColumn(x, data)
-    y_vec <- .resolveColumn(y, data)
-    color_vec <- .resolveColumn(colorBy, data)
-    group_vec <- .resolveColumn(groupBy, data)
-
-    .validateCoord(x_vec, "x")
-    .validateCoord(y_vec, "y")
-    if (length(x_vec) != length(y_vec)) {
-        stop("'x' and 'y' must have the same length.", call. = FALSE)
-    }
-
-    x_vec <- as.numeric(x_vec)
-    y_vec <- as.numeric(y_vec)
-    n_points <- length(x_vec)
-
-    ## ---- adaptive performance defaults -----------------------------------
-    performance_mode <- n_points > 500000L
-    if (performance_mode) {
-        if (is.null(pointSize)) pointSize <- 1
-        if (is.null(opacity)) opacity <- 1
-        pointLabels <- NULL # tooltips kill perf
-    } else if (is.null(pointSize)) {
-        ## Smaller datasets get visibly larger points so they read well in
-        ## both the inline Viewer and the RStudio Zoom popup.
-        pointSize <- if (n_points < 5000L) 5 else if (n_points < 50000L) 4 else 3
-    }
-    if (is.null(opacity)) opacity <- 0.8
-
-    ## ---- coordinate normalisation ----------------------------------------
-    ## Default to data range + `rangePadding` on each side. The padding lives
-    ## inside the normalisation rather than inside any JS auto-fit so the
-    ## displayed axes reflect the padded extent and we never fight
-    ## regl-scatterplot's edge culling (it applies a small constant pixel
-    ## margin we can't predict). Users who want exact data bounds can pass
-    ## `xrange = range(x_vec), yrange = range(y_vec)` or
-    ## `rangePadding = 0`.
-    .padRange <- function(r, frac) {
-        d <- diff(r)
-        if (!is.finite(d) || d == 0) {
-            return(r)
-        }
-        c(r[1L] - d * frac, r[2L] + d * frac)
-    }
-    xrange <- xrange %||% .padRange(range(x_vec, na.rm = TRUE), rangePadding)
-    yrange <- yrange %||% .padRange(range(y_vec, na.rm = TRUE), rangePadding)
-
-    x_norm <- .normaliseRange(x_vec, xrange[1L], xrange[2L])
-    y_norm <- .normaliseRange(y_vec, yrange[1L], yrange[2L])
-
-    ## ---- variable names for legend/registry ------------------------------
-    color_var_name <- if (is.character(colorBy) && length(colorBy) == 1L) {
-        colorBy
-    } else {
-        "Solid_Color"
-    }
-    group_var_name <- if (is.character(groupBy) && length(groupBy) == 1L) {
-        groupBy
-    } else {
-        NULL
-    }
-
-    ## ---- colours ---------------------------------------------------------
+    color_var_name <- .varName(inp$colorBy) %||% "Solid_Color"
     col_payload <- .buildColorPayload(
-        color_vec = color_vec,
+        color_vec = .resolveColumn(inp$colorBy, inp$data),
         color_var_name = color_var_name,
-        legend_title = legendTitle,
+        legend_title = inp$legendTitle,
         point_color = pointColor,
         categorical_palette = categoricalPalette,
         continuous_palette = continuousPalette,
@@ -525,155 +249,57 @@ reglScatterplot <- function(data = NULL,
         vmin = vmin, vmax = vmax,
         center_zero = centerZero
     )
-
     options <- col_payload$options
-    options$size <- pointSize
-    options$opacity <- opacity
-    legend_data <- col_payload$legend
-    z_norm <- col_payload$z
+    options$size <- perf$pointSize
+    options$opacity <- perf$opacity
 
-    ## ---- per-variable filter payload -------------------------------------
-    filter_payload <- list()
-    if (!is.null(filterBy)) {
-        if (!is.data.frame(filterBy)) {
-            stop("'filterBy' must be a data.frame.", call. = FALSE)
-        }
-        for (col in names(filterBy)) {
-            filter_payload[[col]] <- toBase64(as.numeric(filterBy[[col]]))
-        }
-    }
-
-    group_payload <- NULL
-    if (!is.null(group_vec)) {
-        group_payload <- .toBase64U16Int(as.integer(as.factor(group_vec)) - 1L)
-    }
-
-    ## Pick the compact z encoder based on the legend's var_type. Falls back
-    ## to Float32 for the (rare) "no colour" case.
-    z_payload <- if (is.null(z_norm)) {
-        NULL
-    } else {
-        switch(legend_data$var_type %||% "",
-            continuous  = .toBase64U16Unit(z_norm),
-            categorical = .toBase64U16Int(z_norm),
-            toBase64(z_norm)
-        )
-    }
-
-    ## ---- size/opacity encoding channel (valueB) -------------------------
-    ## A numeric variable mapped to point size and/or opacity. `sizeBy` and
-    ## `opacityBy` share one channel, so they encode the same variable.
-    size_vec <- .resolveColumn(sizeBy, data)
-    opacity_vec <- .resolveColumn(opacityBy, data)
-    w_vec <- if (!is.null(size_vec)) size_vec else opacity_vec
-    w_payload <- NULL
-    if (!is.null(w_vec)) {
-        w_num <- as.numeric(w_vec)
-        w_rng <- range(w_num, na.rm = TRUE)
-        w_unit <- if (diff(w_rng) == 0) {
-            rep.int(0.5, length(w_num))
-        } else {
-            (w_num - w_rng[1L]) / diff(w_rng)
-        }
-        w_payload <- .toBase64U16Unit(w_unit)
-    }
-
-    ## ---- extra hover fields (tooltipBy) ---------------------------------
-    ## Column name(s) when `data` is a data.frame, or a data.frame / named list
-    ## of vectors. Numeric -> raw float; categorical -> integer codes + levels.
-    tooltip_payload <- NULL
-    if (!is.null(tooltipBy)) {
-        tt <- if (is.character(tooltipBy) && !is.null(data) && is.data.frame(data)) {
-            stats::setNames(lapply(tooltipBy, function(cn) data[[cn]]), tooltipBy)
-        } else if (is.data.frame(tooltipBy)) {
-            as.list(tooltipBy)
-        } else if (is.list(tooltipBy)) {
-            tooltipBy
-        } else {
-            stop("'tooltipBy' must be column name(s) (with a data.frame), or a ",
-                "data.frame / named list of vectors.", call. = FALSE)
-        }
-        tooltip_payload <- lapply(names(tt), function(nm) {
-            v <- tt[[nm]]
-            if (is.numeric(v)) {
-                list(name = nm, kind = "num", data = toBase64(as.numeric(v)))
-            } else {
-                f <- as.factor(v)
-                list(name = nm, kind = "cat",
-                    codes = .toBase64U16Int(as.integer(f) - 1L),
-                    levels = I(as.character(levels(f))))
-            }
-        })
-    }
-
-    margins <- margins %||% list(top = 20, right = 20, bottom = 40, left = 50)
-
-    legend_anchor <- .resolveLegendPosition(legendPosition)
-
-    widget_spec <- list(
-        x = .toBase64U16(x_norm),
-        y = .toBase64U16(y_norm),
-        z = z_payload,
-        filter_data = filter_payload,
-        group_data = group_payload,
-        n_points = n_points,
-        pixelRatio = pixelRatio,
-        options = options,
-        legend = legend_data,
-        x_min = xrange[1L], x_max = xrange[2L],
-        y_min = yrange[1L], y_max = yrange[2L],
-        xlab = xlab, ylab = ylab, title = title,
+    payload <- .buildDataPayload(inp, coords, col_payload,
+        filterBy = filterBy, sizeBy = sizeBy, opacityBy = opacityBy,
+        tooltipBy = tooltipBy
+    )
+    widget_spec <- c(payload, list(
+        n_points = coords$n, pixelRatio = pixelRatio, options = options,
+        legend = col_payload$legend,
+        x_min = coords$xrange[1L], x_max = coords$xrange[2L],
+        y_min = coords$yrange[1L], y_max = coords$yrange[2L],
+        xlab = inp$xlab, ylab = inp$ylab, title = title,
         showAxes = showAxes, showTooltip = showTooltip,
-        backgroundColor = backgroundColor,
-        axisColor = axisColor,
-        w = w_payload,
-        sizeBy = !is.null(size_vec),
-        opacityBy = !is.null(opacity_vec),
-        tooltip_data = tooltip_payload,
+        backgroundColor = backgroundColor, axisColor = axisColor,
         legendBg = legendBg, legendText = legendText,
         legendOpacity = legendOpacity, legendBlur = legendBlur,
-        toolbarPosition = toolbarPosition, zoomOnSelection = isTRUE(zoomOnSelection),
-        legendAnchor = legend_anchor, draggableLegend = isTRUE(draggableLegend),
+        toolbarPosition = toolbarPosition,
+        zoomOnSelection = isTRUE(zoomOnSelection),
+        legendAnchor = .resolveLegendPosition(legendPosition),
+        draggableLegend = isTRUE(draggableLegend),
         enableDownload = enableDownload,
-        gene_names = if (!is.null(pointLabels)) as.character(pointLabels) else NULL,
-        plotId = plotId, syncPlots = syncPlots,
-        dataVersion = dataVersion,
-        performanceMode = performance_mode,
-        masterId = masterId,
-        autoFit = autoFit,
-        margins = margins,
-        fontSize = fontSize,
-        legendFontSize = legendFontSize,
-        init_server_indices = if (!is.null(filteredIndices)) as.integer(filteredIndices),
-        init_selected_indices = if (!is.null(selectedIndices)) as.integer(selectedIndices),
+        gene_names = if (!is.null(perf$pointLabels)) {
+            as.character(perf$pointLabels)
+        },
+        plotId = plotId, syncPlots = syncPlots, dataVersion = dataVersion,
+        performanceMode = perf$mode, masterId = masterId, autoFit = autoFit,
+        margins = margins %||%
+            list(top = 20, right = 20, bottom = 40, left = 50),
+        fontSize = fontSize, legendFontSize = legendFontSize,
+        init_server_indices = if (!is.null(filteredIndices)) {
+            as.integer(filteredIndices)
+        },
+        init_selected_indices = if (!is.null(selectedIndices)) {
+            as.integer(selectedIndices)
+        },
         syncState = syncState,
         colorVar = color_var_name,
-        groupVar = group_var_name,
-        crosstalk = list(
-            on = !is.null(crosstalk_group),
-            group = crosstalk_group,
-            key = if (!is.null(crosstalk_key)) I(as.character(crosstalk_key)) else NULL
-        )
-    )
+        groupVar = .varName(inp$groupBy),
+        crosstalk = .crosstalkSpec(ct)
+    ))
 
     htmlwidgets::createWidget(
-        name = "reglScatterplot", # widget name (matches inst/htmlwidgets/reglScatterplot.js)
+        name = "reglScatterplot", # matches inst/htmlwidgets/reglScatterplot.js
         x = widget_spec,
         width = width,
         height = height,
         package = "reglScatterplotR",
         elementId = elementId,
-        dependencies = if (!is.null(crosstalk_group)) crosstalk::crosstalkLibs() else NULL,
-        sizingPolicy = htmlwidgets::sizingPolicy(
-            defaultWidth = "100%",
-            defaultHeight = 500,
-            padding = 0,
-            browser.fill = TRUE,
-            viewer.fill = TRUE,
-            knitr.figure = FALSE,
-            viewer.suppress = FALSE,
-            knitr.defaultWidth = "100%",
-            knitr.defaultHeight = 500
-        )
+        dependencies = if (!is.null(ct$group)) crosstalk::crosstalkLibs(),
+        sizingPolicy = .widgetSizingPolicy()
     )
 }
