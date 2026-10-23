@@ -1,8 +1,10 @@
-# reglScatterplotR
+# reglScatterplotR <img src="man/figures/logo.png" align="right" height="139" alt="reglScatterplotR hex logo" />
 
 <!-- badges: start -->
+[![Bioconductor build](https://bioconductor.org/shields/build/devel/bioc/reglScatterplotR.svg)](https://bioconductor.org/checkResults/devel/bioc-LATEST/reglScatterplotR/)
+[![In Bioconductor](https://bioconductor.org/shields/years-in-bioc/reglScatterplotR.svg)](https://bioconductor.org/packages/devel/bioc/html/reglScatterplotR.html)
 [![R-CMD-check](https://github.com/george123ya/reglScatterplotR/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/george123ya/reglScatterplotR/actions/workflows/R-CMD-check.yaml)
-[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 <!-- badges: end -->
 
@@ -39,14 +41,18 @@ and other high-dimensional biological data.
 ## Installation
 
 ```r
-# From GitHub (development version)
-remotes::install_github("george123ya/reglScatterplotR")
-
-# Once accepted into Bioconductor
+# From Bioconductor
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 BiocManager::install("reglScatterplotR")
+
+# Development version from GitHub
+remotes::install_github("george123ya/reglScatterplotR")
 ```
+
+Until the Bioconductor 3.24 release (November 2026), the package is only in
+Bioconductor devel. Run `BiocManager::install(version = "devel")` first, or
+install from GitHub.
 
 ## Quick start
 
