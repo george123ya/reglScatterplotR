@@ -2,7 +2,7 @@
 
 <!-- badges: start -->
 [![Bioconductor build](https://bioconductor.org/shields/build/devel/bioc/reglScatterplotR.svg)](https://bioconductor.org/checkResults/devel/bioc-LATEST/reglScatterplotR/)
-[![In Bioconductor](https://bioconductor.org/shields/years-in-bioc/reglScatterplotR.svg)](https://bioconductor.org/packages/devel/bioc/html/reglScatterplotR.html)
+[![Bioconductor platforms](https://bioconductor.org/shields/availability/devel/reglScatterplotR.svg)](https://bioconductor.org/packages/devel/bioc/html/reglScatterplotR.html)
 [![R-CMD-check](https://github.com/george123ya/reglScatterplotR/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/george123ya/reglScatterplotR/actions/workflows/R-CMD-check.yaml)
 [![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
